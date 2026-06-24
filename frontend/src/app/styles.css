@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui;
+  background: #f4f6f9;
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg bg-surface p-6 shadow-card;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold tracking-normal text-textPrimary;
+  }
+
+  .section-title {
+    @apply text-xl font-semibold tracking-normal text-textPrimary;
+  }
+
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-normal text-textSecondary;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-borderSoft bg-white px-3 py-2.5 text-sm text-textPrimary outline-none transition focus:border-primary focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-textSecondary;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-inactive;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-borderSoft bg-white px-4 py-2.5 text-sm font-semibold text-textPrimary transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-inactive;
+  }
+
+  .btn-small {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-textSecondary transition hover:bg-slate-100 hover:text-primary disabled:cursor-not-allowed disabled:text-inactive disabled:hover:bg-transparent;
+  }
+
+  .menu-item {
+    @apply flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100;
+  }
+
+  .metric-icon {
+    @apply flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-primary;
+  }
+
+  .table-wrap {
+    @apply w-full overflow-x-auto;
+  }
+
+  .data-table {
+    @apply w-full min-w-[760px] border-collapse text-left text-sm;
+  }
+
+  .data-table th {
+    @apply border-b border-borderSoft bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-normal text-textSecondary;
+  }
+
+  .data-table td {
+    @apply border-b border-slate-100 px-4 py-3 align-middle;
+  }
+}
+
+@media (max-width: 720px) {
+  .card {
+    padding: 18px;
+  }
+
+  .data-table {
+    min-width: 700px;
+  }
+}

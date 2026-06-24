@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="7e4376e7-7646-41b8-9214-5489326cf6bf" name="Changes" comment="initial" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="67" />
+  </component>
+  <component name="Git.Settings">
+    <excluded-from-favorite>
+      <branch-storage>
+        <map>
+          <entry type="LOCAL">
+            <value>
+              <list>
+                <branch-info repo="$PROJECT_DIR$" source="main" />
+              </list>
+            </value>
+          </entry>
+        </map>
+      </branch-storage>
+    </excluded-from-favorite>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;KauanRZin&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/KauanRZin/freelance.git&quot;,
+    &quot;accountId&quot;: &quot;933de4d6-97ef-4704-969c-171de4c78f14&quot;
+  }
+}</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.8139474572486214" />
+      <entry key="MS500" value="3.277712522477859" />
+      <entry key="S2" value="3.798215755416067" />
+      <entry key="S5" value="3.9174133956180244" />
+      <entry key="S10" value="3.9583874591423216" />
+      <entry key="S30" value="3.9860575426725675" />
+      <entry key="S60" value="3.993230201240207" />
+      <entry key="M2" value="4.07604204808301" />
+      <entry key="M5" value="7.8403507955608" />
+      <entry key="M10" value="31.419432580433327" />
+      <entry key="M15" value="78.2335592762083" />
+      <entry key="M30" value="262.4754316678822" />
+      <entry key="H1" value="532.6238913954579" />
+      <entry key="H2" value="775.9388920101293" />
+      <entry key="H4" value="941.4266180685062" />
+      <entry key="D1" value="1108.8010234380295" />
+      <entry key="W1" value="1140.6041768960652" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.7496776236123057" />
+      <entry key="MS500" value="3.2531126288828465" />
+      <entry key="S2" value="3.791004303951828" />
+      <entry key="S5" value="3.91443122986762" />
+      <entry key="S10" value="3.9568795901017846" />
+      <entry key="S30" value="3.9855511397565953" />
+      <entry key="S60" value="3.9929765077341703" />
+      <entry key="M2" value="4.0759120332083745" />
+      <entry key="M5" value="7.8402378558749" />
+      <entry key="M10" value="31.419139212130307" />
+      <entry key="M15" value="78.23302813350894" />
+      <entry key="M30" value="262.4745039795944" />
+      <entry key="H1" value="532.6229440464076" />
+      <entry key="H2" value="775.938200730432" />
+      <entry key="H4" value="941.4261983850269" />
+      <entry key="D1" value="1108.8009410001275" />
+      <entry key="W1" value="1140.604164779999" />
+    </decayedShown>
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="QODANA_PROBLEMS_VIEW_TAB" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="3FYTKWWJdS9ScUJo5Jokxv2hNwA" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "javascript.preferred.runtime.type.id": "node",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/kauan/freelance/laudeceia",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "npm.dev.executor": "Run",
+    "onboarding.tips.debug.path": "/home/kauan/freelance/laudeceia/src/main.js",
+    "prettierjs.PrettierConfiguration.Package": "/home/kauan/freelance/laudeceia/node_modules/prettier",
+    "settings.editor.selected.configurable": "vcs.Git",
+    "to.speed.mode.migration.done": "true",
+    "ts.external.directory.path": "/home/kauan/Downloads/WebStorm-2026.1.3/WebStorm-261.25134.101/plugins/javascript-plugin/jsLanguageServicesImpl/external",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="dev" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/backend/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="dev" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="npm.dev" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-WS-261.25134.101" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="7e4376e7-7646-41b8-9214-5489326cf6bf" name="Changes" comment="" />
+      <created>1782250939927</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1782250939927</updated>
+      <workItem from="1782250940858" duration="8524000" />
+    </task>
+    <task id="LOCAL-00001" summary="opa?">
+      <option name="closed" value="true" />
+      <created>1782256159135</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1782256159136</updated>
+    </task>
+    <task id="LOCAL-00002" summary="kakka">
+      <option name="closed" value="true" />
+      <created>1782256921965</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1782256921965</updated>
+    </task>
+    <task id="LOCAL-00003" summary="initial">
+      <option name="closed" value="true" />
+      <created>1782257124849</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1782257124850</updated>
+    </task>
+    <task id="LOCAL-00004" summary="initial">
+      <option name="closed" value="true" />
+      <created>1782257459017</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1782257459017</updated>
+    </task>
+    <task id="LOCAL-00005" summary="initial">
+      <option name="closed" value="true" />
+      <created>1782258883380</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1782258883380</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="com.intellij.fileTypeFactory" implementationName=".env" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <ignored-roots>
+      <path value="$PROJECT_DIR$" />
+    </ignored-roots>
+    <MESSAGE value="opa?" />
+    <MESSAGE value="opa" />
+    <MESSAGE value="kakka" />
+    <MESSAGE value="initial" />
+    <option name="LAST_COMMIT_MESSAGE" value="initial" />
+  </component>
+</project>

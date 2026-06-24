@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPERADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum Status {
+  ATIVO
+  INATIVO
+}
+
+model User {
+  id           String    @id @default(uuid())
+  nome         String
+  email        String    @unique
+  passwordHash String
+  role         Role
+  status       Status    @default(ATIVO)
+  avatar       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  vinculos     Vinculo[] @relation("UserVinculos")
+}
+
+model Vinculo {
+  id         Int         @id @default(autoincrement())
+  nome       String      @unique
+  users      User[]      @relation("UserVinculos")
+  clients    Client[]    @relation("ClientVinculos")
+  insurances Insurance[]
+}
+
+model Client {
+  id         String      @id @default(uuid())
+  nome       String
+  cpf        String      @unique
+  telefone   String
+  nascimento DateTime
+  observacao String      @default("")
+  endereco   Json
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  vinculos   Vinculo[]   @relation("ClientVinculos")
+  seguros    Insurance[]
+}
+
+model InsuranceType {
+  id         Int         @id
+  nome       String      @unique
+  insurances Insurance[]
+}
+
+model Insurance {
+  id             String        @id @default(uuid())
+  clientId       String
+  tipoId         Int
+  inicioVigencia DateTime
+  fimVigencia    DateTime?
+  vinculoId      Int
+  client         Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tipo           InsuranceType @relation(fields: [tipoId], references: [id])
+  vinculo        Vinculo       @relation(fields: [vinculoId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
