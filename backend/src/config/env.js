@@ -5,10 +5,13 @@ dotenv.config();
 const env = {
   databaseUrl: process.env.DATABASE_URL,
   jwtSecret: process.env.JWT_SECRET,
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "1d",
-  corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
-  port: Number(process.env.PORT || 3000),
-  nodeEnv: process.env.NODE_ENV || "development",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ,
+  corsOrigin: process.env.CORS_ORIGIN ,
+  port: Number(process.env.PORT),
+  nodeEnv: process.env.NODE_ENV ,
+  SuperAdminEmail : process.env.SUPERADMIN_EMAIL,
+  ManagerEmail : process.env.MANAGER_EMAIL,
+  EmployeeEmail : process.env.EMPLOYEE_EMAIL
 };
 
 if (!env.jwtSecret) {
