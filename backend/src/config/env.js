@@ -9,7 +9,6 @@ const env = {
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   port: Number(process.env.PORT || 3000),
   nodeEnv: process.env.NODE_ENV || "development",
-  skipDatabaseConnect: process.env.SKIP_DATABASE_CONNECT === "true",
 };
 
 if (!env.jwtSecret) {

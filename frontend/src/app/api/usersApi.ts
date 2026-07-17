@@ -15,3 +15,8 @@ export async function updateUserStatus(id: string, status: User["status"]) {
   const { data } = await api.patch<User>(`/users/${id}/status`, { status });
   return data;
 }
+
+export async function changeUserPassword(id: string, password: string) {
+  const { data } = await api.patch<{ ok: boolean }>(`/users/${id}/password`, { password });
+  return data;
+}

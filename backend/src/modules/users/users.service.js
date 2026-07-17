@@ -14,8 +14,8 @@ async function vinculoConnectByNames(names) {
 }
 
 function assertManager(user) {
-  if (user.role !== "MANAGER") {
-    throw new AppError("Apenas gerentes podem gerenciar usuários", 403, "FORBIDDEN_USERS");
+  if (user.role !== "MANAGER" && user.role !== "SUPERADMIN") {
+    throw new AppError("Apenas gerentes e admins podem gerenciar usuários", 403, "FORBIDDEN_USERS");
   }
 }
 
@@ -35,7 +35,7 @@ async function list(currentUser) {
 }
 
 async function getById(currentUser, id) {
-  if (currentUser.role !== "MANAGER" && currentUser.id !== id) {
+  if (currentUser.role !== "MANAGER" && currentUser.id !== id && user.role !== "SUPERADMIN") {
     throw new AppError("Você não tem permissão para acessar este usuário", 403, "FORBIDDEN_USER");
   }
   const user = await prisma.user.findUnique({ where: { id }, include: { vinculos: true } });

@@ -1,3 +1,4 @@
+
 import type { Client, RenewalRow, User } from "../types/domain";
 
 export const VINCULOS = ["Seguradora X", "Escritório Y", "Agência 1", "Agência 2"];

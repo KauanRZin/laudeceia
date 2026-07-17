@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -19,94 +19,206 @@ import {
   Users,
   X,
 } from "lucide-react";
-import type { Client, Insurance, Role, Screen, User } from "./types/domain";
-import { ACTIVE_RENEWALS, CLIENTS, EXPIRING_RENEWALS, INSURANCE_TYPES, USERS, VINCULOS } from "./data/mockData";
+import type { Client, Insurance, RenewalRow, Role, Screen, User } from "./types/domain";
 import { formatDate, initials } from "./utils/format";
 import * as authApi from "./api/authApi";
+import * as usersApi from "./api/usersApi";
+import * as clientsApi from "./api/clientsApi";
+import { getVinculos, type Vinculo } from "./api/vinculosApi";
+import { getInsuranceTypes, type InsuranceType } from "./api/insuranceTypesApi";
 import { normalizeApiError, TOKEN_KEY } from "./api/http";
 
-const blankClient: Client = {
-  id: "",
-  nome: "",
-  cpf: "",
-  telefone: "",
-  nascimento: "",
-  observacao: "",
-  endereco: { cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "" },
-  vinculos: ["Agência 1"],
-  seguros: [],
-};
+function makeBlankClient(defaultVinculo: string): Client {
+  return {
+    id: "",
+    nome: "",
+    cpf: "",
+    telefone: "",
+    nascimento: "",
+    observacao: "",
+    endereco: { cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "" },
+    vinculos: defaultVinculo ? [defaultVinculo] : [],
+    seguros: [],
+  };
+}
 
-const blankInsurance: Insurance = {
-  id: "",
-  tipoId: 1,
-  tipoNome: "Seguro de Vida",
-  inicioVigencia: "",
-  fimVigencia: null,
-  vinculoId: 3,
-  vinculoNome: "Agência 1",
-};
+function makeBlankInsurance(defaultType?: InsuranceType, defaultVinculo?: Vinculo): Insurance {
+  return {
+    id: "",
+    tipoId: defaultType?.id ?? 0,
+    tipoNome: defaultType?.nome ?? "",
+    inicioVigencia: "",
+    fimVigencia: null,
+    vinculoId: defaultVinculo?.id ?? 0,
+    vinculoNome: defaultVinculo?.nome ?? "",
+  };
+}
 
-const blankUser: User = {
-  id: "",
-  nome: "",
-  email: "",
-  role: "Funcionário",
-  vinculos: ["Agência 1"],
-  status: "Ativo",
-};
+function makeBlankUser(defaultVinculo: string): User {
+  return { id: "", nome: "", email: "", role: "Funcionário", vinculos: defaultVinculo ? [defaultVinculo] : [], status: "Ativo" };
+}
+
+function toISODate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function computeRenewals(clients: Client[], rangeStart: string, rangeEnd: string): { active: RenewalRow[]; expiring: RenewalRow[] } {
+  const start = new Date(rangeStart);
+  const end = new Date(rangeEnd);
+  const today = new Date();
+  const active: RenewalRow[] = [];
+  const expiring: RenewalRow[] = [];
+
+  for (const client of clients) {
+    for (const seguro of client.seguros) {
+      const inicio = new Date(seguro.inicioVigencia);
+      const fim = seguro.fimVigencia ? new Date(seguro.fimVigencia) : null;
+      const overlapsRange = inicio <= end && (fim === null || fim >= start);
+      if (!overlapsRange) continue;
+
+      if (fim === null) {
+        active.push({ cliente: client.nome, tipo: seguro.tipoNome, vinculo: seguro.vinculoNome, inicio: seguro.inicioVigencia, fim: null, status: "Ativo" });
+        continue;
+      }
+
+      if (fim < today) continue; // já expirado, fora do escopo destas duas tabelas
+
+      const dias = Math.ceil((fim.getTime() - today.getTime()) / 86_400_000);
+      if (fim <= end) {
+        expiring.push({ cliente: client.nome, tipo: seguro.tipoNome, vinculo: seguro.vinculoNome, fim: seguro.fimVigencia, dias, status: "Expirando" });
+      } else {
+        active.push({ cliente: client.nome, tipo: seguro.tipoNome, vinculo: seguro.vinculoNome, inicio: seguro.inicioVigencia, fim: seguro.fimVigencia, status: "Ativo" });
+      }
+    }
+  }
+  return { active, expiring };
+}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [clients, setClients] = useState<Client[]>(CLIENTS);
-  const [users, setUsers] = useState<User[]>(USERS);
-  const [selectedClient, setSelectedClient] = useState<Client>(CLIENTS[0]);
-  const [editingClient, setEditingClient] = useState<Client>(CLIENTS[0]);
-  const [editingUser, setEditingUser] = useState<User>(USERS[1]);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const [clients, setClients] = useState<Client[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [vinculos, setVinculos] = useState<Vinculo[]>([]);
+  const [insuranceTypes, setInsuranceTypes] = useState<InsuranceType[]>([]);
+
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [insuranceModal, setInsuranceModal] = useState(false);
   const [toast, setToast] = useState("");
 
-  const role = currentUser?.role || "Manager";
-  const isManager = role === "Manager";
-  const ownVinculo = currentUser?.vinculos[0] || "Agência 1";
+  const [rangeStart, setRangeStart] = useState(() => toISODate(new Date()));
+  const [rangeEnd, setRangeEnd] = useState(() => toISODate(addMonths(new Date(), 4)));
+
+  const role = currentUser?.role || "Funcionário";
+  const isManager = role === "Manager" || role === "SuperAdmin";
+  const ownVinculo = currentUser?.vinculos[0] || "";
+  const vinculoNomes = useMemo(() => vinculos.map((item) => item.nome), [vinculos]);
+
   const visibleClients = useMemo(() => {
-    if (!currentUser || currentUser.role === "Manager") return clients;
+    if (!currentUser || currentUser.role === "Manager" || currentUser.role === "SuperAdmin") return clients;
     return clients.filter((client) => client.vinculos.includes(ownVinculo));
   }, [clients, currentUser, ownVinculo]);
+
+  const { active: activeRenewals, expiring: expiringRenewals } = useMemo(
+    () => computeRenewals(visibleClients, rangeStart, rangeEnd),
+    [visibleClients, rangeStart, rangeEnd]
+  );
 
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 3600);
   }
 
-  async function handleLogin(email: string, password: string, selectedRole: Role) {
+  // Restaura a sessão (se houver token salvo) consultando /auth/me
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      setAuthChecked(true);
+      return;
+    }
+    authApi
+      .me()
+      .then((user) => {
+        setCurrentUser(user);
+        setScreen("dashboard");
+      })
+      .catch(() => authApi.logout())
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  // Dados de referência (vínculos e tipos de seguro) vindos da API
+  useEffect(() => {
+    if (!currentUser) return;
+    getVinculos()
+      .then(setVinculos)
+      .catch((error) => notify(normalizeApiError(error).message));
+    getInsuranceTypes()
+      .then(setInsuranceTypes)
+      .catch((error) => notify(normalizeApiError(error).message));
+  }, [currentUser]);
+
+  // Clientes
+  useEffect(() => {
+    if (!currentUser) return;
+    setClientsLoading(true);
+    clientsApi
+      .getClients()
+      .then(setClients)
+      .catch((error) => notify(normalizeApiError(error).message))
+      .finally(() => setClientsLoading(false));
+  }, [currentUser]);
+
+  // Usuários (Manager e SuperAdmin)
+  useEffect(() => {
+    if (!currentUser || (currentUser.role !== "Manager" && currentUser.role !== "SuperAdmin")) return;
+    setUsersLoading(true);
+    usersApi
+      .getUsers()
+      .then(setUsers)
+      .catch((error) => notify(normalizeApiError(error).message))
+      .finally(() => setUsersLoading(false));
+  }, [currentUser]);
+
+  async function handleLogin(email: string, password: string) {
     try {
       const response = await authApi.login(email, password);
       setCurrentUser(response.user);
       setScreen("dashboard");
     } catch (error) {
-      const apiError = normalizeApiError(error);
-      const fallback = USERS.find((user) => user.email === email && user.role === selectedRole);
-      if (fallback && password === "123456") {
-        localStorage.setItem(TOKEN_KEY, "prototype-token");
-        setCurrentUser(fallback);
-        setScreen("dashboard");
-        notify("Usando modo protótipo com dados locais.");
-        return;
-      }
-      notify(apiError.message);
+      notify(normalizeApiError(error).message);
     }
   }
 
   function logout() {
     authApi.logout();
     setCurrentUser(null);
+    setClients([]);
+    setUsers([]);
     setScreen("login");
   }
 
+  function updateEditingClient(updater: Client | ((client: Client) => Client)) {
+    setEditingClient((current) => {
+      if (!current) return current;
+      return typeof updater === "function" ? (updater as (client: Client) => Client)(current) : updater;
+    });
+  }
+
   function openClientForm(client?: Client) {
-    setEditingClient(client ? structuredClone(client) : { ...blankClient, vinculos: [ownVinculo] });
+    setEditingClient(client ? structuredClone(client) : makeBlankClient(ownVinculo || vinculoNomes[0] || ""));
     setScreen("clientForm");
   }
 
@@ -115,34 +227,68 @@ export default function App() {
     setScreen("clientProfile");
   }
 
-  function saveClient(client: Client) {
-    const nextClient = { ...client, id: client.id || `c${Date.now()}` };
-    setClients((prev) => (client.id ? prev.map((item) => (item.id === client.id ? nextClient : item)) : [nextClient, ...prev]));
-    setSelectedClient(nextClient);
-    setScreen("clientProfile");
-    notify("Cliente salvo com sucesso.");
+  async function saveClient(client: Client) {
+    try {
+      const saved = await clientsApi.saveClient(client);
+      setClients((prev) => (client.id ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
+      setSelectedClient(saved);
+      setScreen("clientProfile");
+      notify("Cliente salvo com sucesso.");
+    } catch (error) {
+      notify(normalizeApiError(error).message);
+    }
   }
 
-  function removeClient(id: string) {
-    setClients((prev) => prev.filter((client) => client.id !== id));
-    notify("Cliente removido.");
+  async function removeClient(id: string) {
+    try {
+      await clientsApi.deleteClient(id);
+      setClients((prev) => prev.filter((client) => client.id !== id));
+      notify("Cliente removido.");
+    } catch (error) {
+      notify(normalizeApiError(error).message);
+    }
+  }
+
+  function updateEditingUser(updater: User | ((user: User) => User)) {
+    setEditingUser((current) => {
+      if (!current) return current;
+      return typeof updater === "function" ? (updater as (user: User) => User)(current) : updater;
+    });
   }
 
   function openUserForm(user?: User) {
-    setEditingUser(user ? structuredClone(user) : blankUser);
+    setEditingUser(user ? structuredClone(user) : makeBlankUser(vinculoNomes[0] || ""));
     setScreen("userForm");
   }
 
-  function saveUser(user: User) {
-    const nextUser = { ...user, id: user.id || `u${Date.now()}` };
-    setUsers((prev) => (user.id ? prev.map((item) => (item.id === user.id ? nextUser : item)) : [nextUser, ...prev]));
-    setScreen("users");
-    notify("Usuário salvo com sucesso.");
+  async function saveUser(user: User) {
+    try {
+      const saved = await usersApi.saveUser(user);
+      setUsers((prev) => (user.id ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
+      setScreen("users");
+      notify("Usuário salvo com sucesso.");
+    } catch (error) {
+      notify(normalizeApiError(error).message);
+    }
   }
 
-  function toggleUserStatus(user: User) {
+  async function toggleUserStatus(user: User) {
     if (user.role === "SuperAdmin") return;
-    setUsers((prev) => prev.map((item) => (item.id === user.id ? { ...item, status: item.status === "Ativo" ? "Inativo" : "Ativo" } : item)));
+    const nextStatus: User["status"] = user.status === "Ativo" ? "Inativo" : "Ativo";
+    try {
+      const saved = await usersApi.updateUserStatus(user.id, nextStatus);
+      setUsers((prev) => prev.map((item) => (item.id === user.id ? saved : item)));
+    } catch (error) {
+      notify(normalizeApiError(error).message);
+    }
+  }
+
+  if (!authChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-appBg text-textSecondary">
+        Carregando...
+      </div>
+    );
   }
 
   if (!currentUser) {
@@ -154,25 +300,63 @@ export default function App() {
       <Navbar user={currentUser} screen={screen} setScreen={setScreen} logout={logout} />
       {toast && <div className="fixed right-5 top-20 z-50 rounded-lg bg-slate-950 px-4 py-3 text-sm font-medium text-white shadow-card">{toast}</div>}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {screen === "dashboard" && <Dashboard user={currentUser} clients={visibleClients} onRenew={() => openClientForm(CLIENTS[0])} />}
+        {screen === "dashboard" && (
+          <Dashboard
+            user={currentUser}
+            clients={visibleClients}
+            loading={clientsLoading}
+            activeRenewals={activeRenewals}
+            expiringRenewals={expiringRenewals}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            onRangeStartChange={setRangeStart}
+            onRangeEndChange={setRangeEnd}
+            onRenew={() => openClientForm()}
+          />
+        )}
         {screen === "clients" && (
-          <ClientList user={currentUser} clients={visibleClients} onNew={() => openClientForm()} onEdit={openClientForm} onView={openClientProfile} onDelete={removeClient} />
+          <ClientList
+            user={currentUser}
+            clients={visibleClients}
+            vinculos={vinculoNomes}
+            loading={clientsLoading}
+            onNew={() => openClientForm()}
+            onEdit={openClientForm}
+            onView={openClientProfile}
+            onDelete={removeClient}
+          />
         )}
-        {screen === "clientForm" && (
-          <ClientForm user={currentUser} client={editingClient} setClient={setEditingClient} onCancel={() => setScreen("clients")} onSave={saveClient} onAddInsurance={() => setInsuranceModal(true)} />
+        {screen === "clientForm" && editingClient && (
+          <ClientForm
+            user={currentUser}
+            client={editingClient}
+            vinculos={vinculoNomes}
+            setClient={updateEditingClient}
+            onCancel={() => setScreen("clients")}
+            onSave={saveClient}
+            onAddInsurance={() => setInsuranceModal(true)}
+          />
         )}
-        {screen === "clientProfile" && <ClientProfile user={currentUser} client={selectedClient} onBack={() => setScreen("clients")} onEdit={() => openClientForm(selectedClient)} />}
-        {screen === "users" && isManager && <UserManagement users={users} onNew={() => openUserForm()} onEdit={openUserForm} onToggle={toggleUserStatus} />}
-        {screen === "userForm" && isManager && <UserForm user={editingUser} setUser={setEditingUser} onCancel={() => setScreen("users")} onSave={saveUser} />}
+        {screen === "clientProfile" && selectedClient && (
+          <ClientProfile user={currentUser} client={selectedClient} onBack={() => setScreen("clients")} onEdit={() => openClientForm(selectedClient)} />
+        )}
+        {screen === "users" && isManager && (
+          <UserManagement users={users} loading={usersLoading} onNew={() => openUserForm()} onEdit={openUserForm} onToggle={toggleUserStatus} />
+        )}
+        {screen === "userForm" && isManager && editingUser && (
+          <UserForm user={editingUser} vinculos={vinculoNomes} setUser={updateEditingUser} onCancel={() => setScreen("users")} onSave={saveUser} />
+        )}
         {screen === "profile" && <OwnProfile user={currentUser} setUser={setCurrentUser} notify={notify} />}
       </main>
-      {insuranceModal && (
+      {insuranceModal && editingClient && (
         <InsuranceModal
           user={currentUser}
           client={editingClient}
+          vinculos={vinculos}
+          insuranceTypes={insuranceTypes}
           onClose={() => setInsuranceModal(false)}
           onSave={(insurance) => {
-            setEditingClient((client) => ({ ...client, seguros: [...client.seguros, { ...insurance, id: `s${Date.now()}` }] }));
+            setEditingClient((client) => (client ? { ...client, seguros: [...client.seguros, { ...insurance, id: `s${Date.now()}` }] } : client));
             setInsuranceModal(false);
           }}
         />
@@ -181,10 +365,9 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin, toast }: { onLogin: (email: string, password: string, role: Role) => void; toast: string }) {
-  const [email, setEmail] = useState("gerente@seguradora.com");
-  const [password, setPassword] = useState("123456");
-  const [role, setRole] = useState<Role>("Manager");
+function LoginScreen({ onLogin, toast }: { onLogin: (email: string, password: string) => void; toast: string }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#0B1F3A] px-4">
@@ -201,24 +384,13 @@ function LoginScreen({ onLogin, toast }: { onLogin: (email: string, password: st
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            onLogin(email, password, role);
+            onLogin(email, password);
           }}
         >
           <Field label="E-mail" value={email} onChange={setEmail} />
           <Field label="Senha" value={password} onChange={setPassword} type="password" />
-          <label className="block">
-            <span className="label">Perfil do protótipo</span>
-            <select className="input" value={role} onChange={(event) => setRole(event.target.value as Role)}>
-              <option>Manager</option>
-              <option>Funcionário</option>
-            </select>
-          </label>
           <button className="btn-primary w-full" type="submit">Entrar</button>
         </form>
-        <div className="mt-6 rounded-lg border border-borderSoft bg-slate-50 p-4 text-xs leading-6 text-textSecondary">
-          <p>Gerente: gerente@seguradora.com | senha: 123456</p>
-          <p>Funcionário: ana@seguradora.com | senha: 123456</p>
-        </div>
       </section>
     </div>
   );
@@ -226,7 +398,9 @@ function LoginScreen({ onLogin, toast }: { onLogin: (email: string, password: st
 
 function Navbar({ user, screen, setScreen, logout }: { user: User; screen: Screen; setScreen: (screen: Screen) => void; logout: () => void }) {
   const [open, setOpen] = useState(false);
-  const color = user.role === "Manager" ? "bg-primary" : "bg-employee";
+  const isStaff = user.role === "Manager" || user.role === "SuperAdmin";
+  const color = isStaff ? "bg-primary" : "bg-employee";
+  const roleLabel = user.role === "SuperAdmin" ? "Administrador" : user.role === "Manager" ? "Gerente" : "Funcionário";
   return (
     <header className={`${color} sticky top-0 z-40 text-white shadow-card`}>
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
@@ -237,19 +411,19 @@ function Navbar({ user, screen, setScreen, logout }: { user: User; screen: Scree
         <nav className="hidden items-center gap-2 md:flex">
           <NavButton active={screen === "dashboard"} onClick={() => setScreen("dashboard")}>Dashboard</NavButton>
           <NavButton active={screen === "clients"} onClick={() => setScreen("clients")}>Clientes</NavButton>
-          {user.role === "Manager" && <NavButton active={screen === "users"} onClick={() => setScreen("users")}>Usuários</NavButton>}
+          {isStaff && <NavButton active={screen === "users"} onClick={() => setScreen("users")}>Usuários</NavButton>}
         </nav>
         <div className="relative flex items-center gap-3">
           <button className="md:hidden" onClick={() => setOpen((value) => !value)}><Menu /></button>
           <button className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-white/10" onClick={() => setOpen((value) => !value)}>
             <Avatar name={user.nome} small />
-            <span className="hidden text-sm sm:inline">{user.nome} ({user.role === "Manager" ? "Gerente" : "Funcionário"})</span>
+            <span className="hidden text-sm sm:inline">{user.nome} ({roleLabel})</span>
           </button>
           {open && (
             <div className="absolute right-0 top-12 w-56 rounded-lg bg-white p-2 text-textPrimary shadow-xl">
               <button className="menu-item md:hidden" onClick={() => setScreen("dashboard")}>Dashboard</button>
               <button className="menu-item md:hidden" onClick={() => setScreen("clients")}>Clientes</button>
-              {user.role === "Manager" && <button className="menu-item md:hidden" onClick={() => setScreen("users")}>Usuários</button>}
+              {isStaff && <button className="menu-item md:hidden" onClick={() => setScreen("users")}>Usuários</button>}
               <button className="menu-item" onClick={() => setScreen("profile")}><UserCircle size={16} /> Meu Perfil</button>
               <button className="menu-item text-danger" onClick={logout}><LogOut size={16} /> Sair</button>
             </div>
@@ -260,9 +434,29 @@ function Navbar({ user, screen, setScreen, logout }: { user: User; screen: Scree
   );
 }
 
-function Dashboard({ user, clients, onRenew }: { user: User; clients: Client[]; onRenew: () => void }) {
-  const active = user.role === "Manager" ? ACTIVE_RENEWALS : ACTIVE_RENEWALS.filter((row) => row.vinculo === user.vinculos[0]);
-  const expiring = user.role === "Manager" ? EXPIRING_RENEWALS : EXPIRING_RENEWALS.filter((row) => row.vinculo === user.vinculos[0]);
+function Dashboard({
+  user,
+  clients,
+  loading,
+  activeRenewals,
+  expiringRenewals,
+  rangeStart,
+  rangeEnd,
+  onRangeStartChange,
+  onRangeEndChange,
+  onRenew,
+}: {
+  user: User;
+  clients: Client[];
+  loading: boolean;
+  activeRenewals: RenewalRow[];
+  expiringRenewals: RenewalRow[];
+  rangeStart: string;
+  rangeEnd: string;
+  onRangeStartChange: (value: string) => void;
+  onRangeEndChange: (value: string) => void;
+  onRenew: () => void;
+}) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -273,32 +467,56 @@ function Dashboard({ user, clients, onRenew }: { user: User; clients: Client[]; 
         {user.role === "Funcionário" && <Banner>Exibindo seguros do seu vínculo: {user.vinculos[0]}</Banner>}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <MetricCard icon={<Users />} label="Total de Clientes" value={clients.length || 47} />
-        <MetricCard icon={<CheckCircle2 />} label="Seguros Ativos" value={clients.reduce((sum, client) => sum + client.seguros.length, 0) || 89} />
+        <MetricCard icon={<Users />} label="Total de Clientes" value={clients.length} />
+        <MetricCard icon={<CheckCircle2 />} label="Seguros Ativos" value={clients.reduce((sum, client) => sum + client.seguros.length, 0)} />
       </div>
       <section className="card">
         <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <h2 className="section-title">Seguros próximos do vencimento</h2>
-            <p className="text-sm text-textSecondary">Período padrão: mês atual até quatro meses à frente.</p>
+            <p className="text-sm text-textSecondary">Selecione o período desejado.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <CalendarDays size={18} className="text-primary" />
-            <input className="input w-40" type="date" defaultValue="2025-01-01" />
+            <input className="input w-40" type="date" value={rangeStart} onChange={(event) => onRangeStartChange(event.target.value)} />
             <span className="text-textSecondary">até</span>
-            <input className="input w-40" type="date" defaultValue="2025-05-01" />
+            <input className="input w-40" type="date" value={rangeEnd} onChange={(event) => onRangeEndChange(event.target.value)} />
           </div>
         </div>
-        <RenewalTable title="Ativos no período" rows={active} mode="active" />
-        <div className="mt-8">
-          <RenewalTable title="Expirando no período" rows={expiring} mode="expiring" onRenew={onRenew} />
-        </div>
+        {loading ? (
+          <p className="text-sm text-textSecondary">Carregando dados...</p>
+        ) : (
+          <>
+            <RenewalTable title="Ativos no período" rows={activeRenewals} mode="active" />
+            <div className="mt-8">
+              <RenewalTable title="Expirando no período" rows={expiringRenewals} mode="expiring" onRenew={onRenew} />
+            </div>
+          </>
+        )}
       </section>
     </div>
   );
 }
 
-function ClientList({ user, clients, onNew, onEdit, onView, onDelete }: { user: User; clients: Client[]; onNew: () => void; onEdit: (client: Client) => void; onView: (client: Client) => void; onDelete: (id: string) => void }) {
+function ClientList({
+  user,
+  clients,
+  vinculos,
+  loading,
+  onNew,
+  onEdit,
+  onView,
+  onDelete,
+}: {
+  user: User;
+  clients: Client[];
+  vinculos: string[];
+  loading: boolean;
+  onNew: () => void;
+  onEdit: (client: Client) => void;
+  onView: (client: Client) => void;
+  onDelete: (id: string) => void;
+}) {
   const [search, setSearch] = useState("");
   const [vinculo, setVinculo] = useState("Todos");
   const filtered = clients.filter((client) => {
@@ -325,43 +543,63 @@ function ClientList({ user, clients, onNew, onEdit, onView, onDelete }: { user: 
             <Search className="absolute left-3 top-3 text-textSecondary" size={18} />
             <input className="input pl-10" placeholder="Buscar por nome ou CPF" value={search} onChange={(event) => setSearch(event.target.value)} />
           </div>
-          {user.role === "Manager" && (
+          {(user.role === "Manager" || user.role === "SuperAdmin") && (
             <select className="input" value={vinculo} onChange={(event) => setVinculo(event.target.value)}>
               <option>Todos</option>
-              {VINCULOS.map((item) => <option key={item}>{item}</option>)}
+              {vinculos.map((item) => <option key={item}>{item}</option>)}
             </select>
           )}
         </div>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Vínculos</th><th>Nº de Seguros</th><th>Ações</th></tr></thead>
-            <tbody>
-              {filtered.map((client) => (
-                <tr key={client.id}>
-                  <td className="font-medium">{client.nome}</td>
-                  <td>{client.cpf}</td>
-                  <td>{client.telefone}</td>
-                  <td><Pills values={client.vinculos} /></td>
-                  <td>{client.seguros.length}</td>
-                  <td>
-                    <div className="flex gap-1">
-                      <IconButton label="Visualizar" onClick={() => onView(client)}><Eye size={17} /></IconButton>
-                      <IconButton label="Editar" onClick={() => onEdit(client)}><Edit size={17} /></IconButton>
-                      {user.role === "Manager" && <IconButton label="Excluir" danger onClick={() => onDelete(client.id)}><Trash2 size={17} /></IconButton>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {loading ? (
+          <p className="text-sm text-textSecondary">Carregando clientes...</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Vínculos</th><th>Nº de Seguros</th><th>Ações</th></tr></thead>
+              <tbody>
+                {filtered.map((client) => (
+                  <tr key={client.id}>
+                    <td className="font-medium">{client.nome}</td>
+                    <td>{client.cpf}</td>
+                    <td>{client.telefone}</td>
+                    <td><Pills values={client.vinculos} /></td>
+                    <td>{client.seguros.length}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <IconButton label="Visualizar" onClick={() => onView(client)}><Eye size={17} /></IconButton>
+                        <IconButton label="Editar" onClick={() => onEdit(client)}><Edit size={17} /></IconButton>
+                        {(user.role === "Manager" || user.role === "SuperAdmin") && <IconButton label="Excluir" danger onClick={() => onDelete(client.id)}><Trash2 size={17} /></IconButton>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
-function ClientForm({ user, client, setClient, onCancel, onSave, onAddInsurance }: { user: User; client: Client; setClient: (client: Client | ((client: Client) => Client)) => void; onCancel: () => void; onSave: (client: Client) => void; onAddInsurance: () => void }) {
-  const isManager = user.role === "Manager";
+function ClientForm({
+  user,
+  client,
+  vinculos,
+  setClient,
+  onCancel,
+  onSave,
+  onAddInsurance,
+}: {
+  user: User;
+  client: Client;
+  vinculos: string[];
+  setClient: (client: Client | ((client: Client) => Client)) => void;
+  onCancel: () => void;
+  onSave: (client: Client) => void;
+  onAddInsurance: () => void;
+}) {
+  const isManager = user.role === "Manager" || user.role === "SuperAdmin";
   const update = (patch: Partial<Client>) => setClient((current) => ({ ...current, ...patch }));
   const updateAddress = (key: keyof Client["endereco"], value: string) => setClient((current) => ({ ...current, endereco: { ...current.endereco, [key]: value } }));
   return (
@@ -395,10 +633,10 @@ function ClientForm({ user, client, setClient, onCancel, onSave, onAddInsurance 
       <section className="card">
         <h2 className="section-title mb-4">Vínculos do Cliente</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          <Select label="Vínculo primário" value={client.vinculos[0] || user.vinculos[0]} disabled={!isManager} onChange={(value) => update({ vinculos: [value, ...client.vinculos.slice(1)] })} options={VINCULOS} />
-          {isManager && client.vinculos.length > 1 && <Select label="Vínculo secundário" value={client.vinculos[1]} onChange={(value) => update({ vinculos: [client.vinculos[0], value] })} options={VINCULOS} />}
+          <Select label="Vínculo primário" value={client.vinculos[0] || user.vinculos[0]} disabled={!isManager} onChange={(value) => update({ vinculos: [value, ...client.vinculos.slice(1)] })} options={vinculos} />
+          {isManager && client.vinculos.length > 1 && <Select label="Vínculo secundário" value={client.vinculos[1]} onChange={(value) => update({ vinculos: [client.vinculos[0], value] })} options={vinculos} />}
         </div>
-        {isManager && client.vinculos.length < 2 && <button className="mt-4 text-sm font-semibold text-primary" onClick={() => update({ vinculos: [client.vinculos[0] || VINCULOS[0], VINCULOS[1]] })}>+ Adicionar segundo vínculo</button>}
+        {isManager && client.vinculos.length < 2 && <button className="mt-4 text-sm font-semibold text-primary" onClick={() => update({ vinculos: [client.vinculos[0] || vinculos[0], vinculos[1]] })}>+ Adicionar segundo vínculo</button>}
         {isManager && <p className="mt-2 text-xs text-textSecondary">Apenas gerentes podem adicionar um segundo vínculo.</p>}
       </section>
       <section className="card">
@@ -448,10 +686,28 @@ function ClientProfile({ user, client, onBack, onEdit }: { user: User; client: C
   );
 }
 
-function InsuranceModal({ user, client, onClose, onSave }: { user: User; client: Client; onClose: () => void; onSave: (insurance: Insurance) => void }) {
-  const [insurance, setInsurance] = useState<Insurance>({ ...blankInsurance, vinculoNome: user.role === "Funcionário" ? user.vinculos[0] : client.vinculos[0] || VINCULOS[0] });
-  const selectedType = INSURANCE_TYPES.find((type) => type.id === insurance.tipoId)!;
-  const isLife = insurance.tipoId === 1;
+function InsuranceModal({
+  user,
+  client,
+  vinculos,
+  insuranceTypes,
+  onClose,
+  onSave,
+}: {
+  user: User;
+  client: Client;
+  vinculos: Vinculo[];
+  insuranceTypes: InsuranceType[];
+  onClose: () => void;
+  onSave: (insurance: Insurance) => void;
+}) {
+  const defaultVinculoNome = user.role === "Funcionário" ? user.vinculos[0] : client.vinculos[0] || vinculos[0]?.nome || "";
+  const defaultVinculo = vinculos.find((item) => item.nome === defaultVinculoNome);
+  const [insurance, setInsurance] = useState<Insurance>(makeBlankInsurance(insuranceTypes[0], defaultVinculo));
+  const selectedType = insuranceTypes.find((type) => type.id === insurance.tipoId);
+  const isLife = selectedType?.nome === "Seguro de Vida";
+  const vinculoOptions = (user.role === "Manager" || user.role === "SuperAdmin") ? vinculos.map((item) => item.nome) : user.vinculos;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4">
       <section className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
@@ -460,22 +716,39 @@ function InsuranceModal({ user, client, onClose, onSave }: { user: User; client:
           <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="space-y-4">
-          <Select label="Tipo de Seguro" value={String(insurance.tipoId)} onChange={(value) => setInsurance({ ...insurance, tipoId: Number(value), tipoNome: INSURANCE_TYPES.find((type) => type.id === Number(value))!.nome, fimVigencia: Number(value) === 1 ? null : insurance.fimVigencia })} options={INSURANCE_TYPES.map((type) => ({ label: `${type.id} - ${type.nome}`, value: String(type.id) }))} />
+          <Select
+            label="Tipo de Seguro"
+            value={String(insurance.tipoId)}
+            onChange={(value) => {
+              const type = insuranceTypes.find((item) => item.id === Number(value));
+              setInsurance((current) => ({ ...current, tipoId: Number(value), tipoNome: type?.nome ?? "", fimVigencia: type?.nome === "Seguro de Vida" ? null : current.fimVigencia }));
+            }}
+            options={insuranceTypes.map((type) => ({ label: `${type.id} - ${type.nome}`, value: String(type.id) }))}
+          />
           <Field label="Início de Vigência" type="date" value={insurance.inicioVigencia} onChange={(value) => setInsurance({ ...insurance, inicioVigencia: value })} />
           {isLife ? <p className="rounded-lg bg-blue-50 p-3 text-sm text-primary">Seguro de Vida não possui fim de vigência.</p> : <Field label="Fim de Vigência" type="date" value={insurance.fimVigencia || ""} onChange={(value) => setInsurance({ ...insurance, fimVigencia: value })} />}
-          <Select label="Vínculo" value={insurance.vinculoNome} disabled={user.role === "Funcionário"} onChange={(value) => setInsurance({ ...insurance, vinculoNome: value, vinculoId: VINCULOS.indexOf(value) + 1 })} options={user.role === "Manager" ? VINCULOS : user.vinculos} />
+          <Select
+            label="Vínculo"
+            value={insurance.vinculoNome}
+            disabled={user.role === "Funcionário"}
+            onChange={(value) => {
+              const vinculo = vinculos.find((item) => item.nome === value);
+              setInsurance({ ...insurance, vinculoNome: value, vinculoId: vinculo?.id ?? 0 });
+            }}
+            options={vinculoOptions}
+          />
           {user.role === "Funcionário" && <p className="text-xs text-textSecondary">Seguros só podem ser vinculados à sua agência: {user.vinculos[0]}</p>}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button className="btn-outline" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" onClick={() => onSave({ ...insurance, tipoNome: selectedType.nome, fimVigencia: isLife ? null : insurance.fimVigencia })}>Salvar Seguro</button>
+          <button className="btn-primary" onClick={() => onSave({ ...insurance, fimVigencia: isLife ? null : insurance.fimVigencia })}>Salvar Seguro</button>
         </div>
       </section>
     </div>
   );
 }
 
-function UserManagement({ users, onNew, onEdit, onToggle }: { users: User[]; onNew: () => void; onEdit: (user: User) => void; onToggle: (user: User) => void }) {
+function UserManagement({ users, loading, onNew, onEdit, onToggle }: { users: User[]; loading: boolean; onNew: () => void; onEdit: (user: User) => void; onToggle: (user: User) => void }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -483,35 +756,39 @@ function UserManagement({ users, onNew, onEdit, onToggle }: { users: User[]; onN
         <button className="btn-primary" onClick={onNew}><Plus size={16} /> Novo Usuário</button>
       </div>
       <section className="card table-wrap">
-        <table className="data-table">
-          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Vínculo</th><th>Status</th><th>Ações</th></tr></thead>
-          <tbody>
-            {users.map((user) => {
-              const locked = user.role === "SuperAdmin";
-              return (
-                <tr key={user.id} className={locked ? "bg-slate-50 text-inactive" : ""} title={locked ? "Usuário de sistema — não editável" : ""}>
-                  <td className="font-medium">{locked && <Lock className="mr-2 inline" size={15} />}{user.nome}</td>
-                  <td>{user.email}</td>
-                  <td>{user.role}</td>
-                  <td>{user.vinculos.length ? user.vinculos.join(", ") : "—"}</td>
-                  <td><StatusBadge status={user.status} /></td>
-                  <td>
-                    <div className="flex gap-1">
-                      <IconButton label="Editar" disabled={locked} onClick={() => onEdit(user)}><Edit size={17} /></IconButton>
-                      <IconButton label="Alternar status" disabled={locked} onClick={() => onToggle(user)}><CheckCircle2 size={17} /></IconButton>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {loading ? (
+          <p className="p-4 text-sm text-textSecondary">Carregando usuários...</p>
+        ) : (
+          <table className="data-table">
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Vínculo</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody>
+              {users.map((user) => {
+                const locked = user.role === "SuperAdmin";
+                return (
+                  <tr key={user.id} className={locked ? "bg-slate-50 text-inactive" : ""} title={locked ? "Usuário de sistema — não editável" : ""}>
+                    <td className="font-medium">{locked && <Lock className="mr-2 inline" size={15} />}{user.nome}</td>
+                    <td>{user.email}</td>
+                    <td>{user.role}</td>
+                    <td>{user.vinculos.length ? user.vinculos.join(", ") : "—"}</td>
+                    <td><StatusBadge status={user.status} /></td>
+                    <td>
+                      <div className="flex gap-1">
+                        <IconButton label="Editar" disabled={locked} onClick={() => onEdit(user)}><Edit size={17} /></IconButton>
+                        <IconButton label="Alternar status" disabled={locked} onClick={() => onToggle(user)}><CheckCircle2 size={17} /></IconButton>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </section>
     </div>
   );
 }
 
-function UserForm({ user, setUser, onCancel, onSave }: { user: User; setUser: (user: User | ((user: User) => User)) => void; onCancel: () => void; onSave: (user: User) => void }) {
+function UserForm({ user, vinculos, setUser, onCancel, onSave }: { user: User; vinculos: string[]; setUser: (user: User | ((user: User) => User)) => void; onCancel: () => void; onSave: (user: User) => void }) {
   const update = (patch: Partial<User>) => setUser((current) => ({ ...current, ...patch }));
   return (
     <div className="space-y-5">
@@ -521,8 +798,8 @@ function UserForm({ user, setUser, onCancel, onSave }: { user: User; setUser: (u
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Nome Completo" value={user.nome} onChange={(value) => update({ nome: value })} />
           <Field label="E-mail" value={user.email} onChange={(value) => update({ email: value })} />
-          <Select label="Perfil" value={user.role} onChange={(value) => update({ role: value as Role, vinculos: value === "Manager" ? user.vinculos : [user.vinculos[0] || "Agência 1"] })} options={["Manager", "Funcionário"]} />
-          <Select label="Vínculo" value={user.vinculos[0] || ""} onChange={(value) => update({ vinculos: [value] })} options={VINCULOS} />
+          <Select label="Perfil" value={user.role} onChange={(value) => update({ role: value as Role, vinculos: value === "Manager" ? user.vinculos : [user.vinculos[0] || vinculos[0] || ""] })} options={["Manager", "Funcionário"]} />
+          <Select label="Vínculo" value={user.vinculos[0] || ""} onChange={(value) => update({ vinculos: [value] })} options={vinculos} />
           <label className="flex items-center gap-3 rounded-lg border border-borderSoft p-3">
             <input type="checkbox" checked={user.status === "Ativo"} onChange={(event) => update({ status: event.target.checked ? "Ativo" : "Inativo" })} />
             <span className="text-sm font-medium">Status Ativo</span>
@@ -557,30 +834,34 @@ function OwnProfile({ user, setUser, notify }: { user: User; setUser: (user: Use
   );
 }
 
-function RenewalTable({ title, rows, mode, onRenew }: { title: string; rows: typeof ACTIVE_RENEWALS; mode: "active" | "expiring"; onRenew?: () => void }) {
+function RenewalTable({ title, rows, mode, onRenew }: { title: string; rows: RenewalRow[]; mode: "active" | "expiring"; onRenew?: () => void }) {
   return (
     <div>
       <h3 className="mb-3 text-base font-semibold">{title}</h3>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>{mode === "active" ? ["Cliente", "Tipo de Seguro", "Vínculo", "Início", "Fim", "Status"].map((h) => <th key={h}>{h}</th>) : ["Cliente", "Tipo de Seguro", "Vínculo", "Fim", "Dias restantes", "Ação"].map((h) => <th key={h}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.cliente}-${row.tipo}`}>
-                <td className="font-medium">{row.cliente}</td>
-                <td>{row.tipo}</td>
-                <td>{row.vinculo}</td>
-                {mode === "active" && <td>{formatDate(row.inicio)}</td>}
-                <td>{row.fim ? formatDate(row.fim) : row.tipo === "Seguro de Vida" ? "Sem vencimento" : "—"}</td>
-                {mode === "active" ? <td><StatusBadge status="Ativo" /></td> : <td>{row.dias} dias</td>}
-                {mode === "expiring" && <td><button className="btn-primary btn-small" onClick={onRenew}>Renovar</button></td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-borderSoft p-5 text-sm text-textSecondary">Nenhum registro no período selecionado.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>{mode === "active" ? ["Cliente", "Tipo de Seguro", "Vínculo", "Início", "Fim", "Status"].map((h) => <th key={h}>{h}</th>) : ["Cliente", "Tipo de Seguro", "Vínculo", "Fim", "Dias restantes", "Ação"].map((h) => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={`${row.cliente}-${row.tipo}`}>
+                  <td className="font-medium">{row.cliente}</td>
+                  <td>{row.tipo}</td>
+                  <td>{row.vinculo}</td>
+                  {mode === "active" && <td>{row.inicio ? formatDate(row.inicio) : "—"}</td>}
+                  <td>{row.fim ? formatDate(row.fim) : "Sem vencimento"}</td>
+                  {mode === "active" ? <td><StatusBadge status="Ativo" /></td> : <td>{row.dias} dias</td>}
+                  {mode === "expiring" && <td><button className="btn-primary btn-small" onClick={onRenew}>Renovar</button></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -594,12 +875,12 @@ function InsuranceCards({ user, insurances, editable }: { user: User; insurances
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div>
               <h3 className="font-semibold">{insurance.tipoNome}</h3>
-              <p className="text-sm text-textSecondary">Vigência: {formatDate(insurance.inicioVigencia)} → {insurance.tipoId === 1 ? "Sem vencimento" : formatDate(insurance.fimVigencia)}</p>
+              <p className="text-sm text-textSecondary">Vigência: {formatDate(insurance.inicioVigencia)} → {insurance.fimVigencia ? formatDate(insurance.fimVigencia) : "Sem vencimento"}</p>
             </div>
             <div className="flex items-center gap-2">
               <Badge>{insurance.vinculoNome}</Badge>
               {editable && <IconButton label="Editar"><Edit size={16} /></IconButton>}
-              {editable && user.role === "Manager" && <IconButton label="Remover" danger><Trash2 size={16} /></IconButton>}
+              {editable && (user.role === "Manager" || user.role === "SuperAdmin") && <IconButton label="Remover" danger><Trash2 size={16} /></IconButton>}
             </div>
           </div>
         </article>
