@@ -9,9 +9,10 @@ const env = {
   corsOrigin: process.env.CORS_ORIGIN ,
   port: Number(process.env.PORT),
   nodeEnv: process.env.NODE_ENV ,
-  SuperAdminEmail : process.env.SUPERADMIN_EMAIL,
-  ManagerEmail : process.env.MANAGER_EMAIL,
-  EmployeeEmail : process.env.EMPLOYEE_EMAIL
+  defaultPwd: process.env.DEFAULTPW,
+  superAdminEmail : process.env.SUPERADMIN_EMAIL,
+  managerEmail : process.env.MANAGER_EMAIL,
+  employeeEmail : process.env.EMPLOYEE_EMAIL
 };
 
 if (!env.jwtSecret) {

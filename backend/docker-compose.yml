@@ -27,6 +27,10 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN}
       PORT: ${PORT}
       NODE_ENV: development
+      DEFAULTPW: ${DEFAULTPW}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL}
+      MANAGER_EMAIL: ${MANAGER_EMAIL}
+      EMPLOYEE_EMAIL: ${EMPLOYEE_EMAIL}
     ports:
       - "3000:3000"
     command: sh -c "npx prisma migrate deploy && node prisma/seed.js && npm run start"

@@ -1,10 +1,10 @@
 const bcrypt = require("bcryptjs");
-const env = require("./config/env");
+const env = require("../src/config/env");
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-const VINCULOS = ["LAUDYS Corretora", "LAUDYS CORRETORA AGENCIA", "Agência 1", "Agência 2"];
+const VINCULOS = ["LAUDYS Corretora", "LAUDYS Corretora Agencia Limoeiro", "LAUDYS Corretora Agencia Surubim", "Agência 2"];
 const INSURANCE_TYPES = [
   { id: 1, nome: "Seguro de Vida" },
   { id: 2, nome: "Seguro Residencial" },
@@ -125,12 +125,12 @@ async function main() {
 
   const allVinculos = await prisma.vinculo.findMany();
   const byName = Object.fromEntries(allVinculos.map((vinculo) => [vinculo.nome, vinculo]));
-  const passwordHash = await bcrypt.hash(process.env.DEFAULTPW, 10);
+  const passwordHash = await bcrypt.hash(env.defaultPwd, 10);
 
   await prisma.user.create({
     data: {
       nome: "SuperAdmin",
-      email: process.env.process.env.SUPERADMIN_EMAIL,
+      email: env.superAdminEmail,
       passwordHash,
       role: "SUPERADMIN",
       vinculos: { connect: allVinculos.map((vinculo) => ({ id: vinculo.id })) },
@@ -140,7 +140,7 @@ async function main() {
   await prisma.user.create({
     data: {
       nome: "Gerente",
-      email: process.env.MANAGER_EMAIL,
+      email: env.managerEmail,
       passwordHash,
       role: "MANAGER",
       vinculos: { connect: allVinculos.map((vinculo) => ({ id: vinculo.id })) },
@@ -150,10 +150,10 @@ async function main() {
   await prisma.user.create({
     data: {
       nome: "Ana Funcionária",
-      email: process.env.EMPLOYEE_EMAIL,
+      email: env.employeeEmail,
       passwordHash,
       role: "EMPLOYEE",
-      vinculos: { connect: [{ id: byName["Seguradora X"].id }] },
+      vinculos: { connect: [{ id: byName["LAUDYS Corretora Agencia Limoeiro"].id }] },
     },
   });
   /*
