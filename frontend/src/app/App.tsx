@@ -1,3 +1,4 @@
+import { buscarDadosCep } from "./api/buscacep";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -20,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { Client, Insurance, RenewalRow, Role, Screen, User } from "./types/domain";
-import { formatDate, initials } from "./utils/format";
+import { formatDate, initials,maskCPF,maskPhone,maskCEP } from "./utils/format";
 import * as authApi from "./api/authApi";
 import * as usersApi from "./api/usersApi";
 import * as clientsApi from "./api/clientsApi";
@@ -602,6 +603,27 @@ function ClientForm({
   const isManager = user.role === "Manager" || user.role === "SuperAdmin";
   const update = (patch: Partial<Client>) => setClient((current) => ({ ...current, ...patch }));
   const updateAddress = (key: keyof Client["endereco"], value: string) => setClient((current) => ({ ...current, endereco: { ...current.endereco, [key]: value } }));
+  useEffect(() => {
+    const cepLimpo = client.endereco.cep.replace(/\D/g, "");
+
+    if (cepLimpo.length === 8) {
+      buscarDadosCep(cepLimpo).then((data) => {
+        if (data) {
+          setClient((current) => ({
+            ...current,
+            endereco: {
+              ...current.endereco,
+              logradouro: data.logradouro,
+              bairro: data.bairro,
+              cidade: data.localidade,
+              estado: data.uf,
+            },
+          }));
+        }
+      });
+    }
+  }, [client.endereco.cep, setClient]);
+  // ========================================================
   return (
     <div className="space-y-5 pb-24 md:pb-0">
       <Breadcrumb items={["Clientes", client.nome || "Novo Cliente", client.id ? "Editar" : "Novo"]} onBack={onCancel} />
@@ -609,9 +631,9 @@ function ClientForm({
         <h1 className="page-title mb-5">{client.id ? "Editar Cliente" : "Novo Cliente"}</h1>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Nome Completo" value={client.nome} onChange={(value) => update({ nome: value })} />
-          <Field label="CPF" value={client.cpf} onChange={(value) => update({ cpf: value })} placeholder="000.000.000-00" />
+          <Field label="CPF" value={client.cpf} onChange={(value) => update({ cpf: maskCPF(value) })} placeholder="000.000.000-00" />
           <Field label="Data de Nascimento" type="date" value={client.nascimento} onChange={(value) => update({ nascimento: value })} />
-          <Field label="Telefone" value={client.telefone} onChange={(value) => update({ telefone: value })} placeholder="(00) 00000-0000" />
+          <Field label="Telefone" value={client.telefone} onChange={(value) => update({ telefone: maskPhone(value) })} placeholder="(00) 00000-0000" />
           <label className="block md:col-span-2">
             <span className="label">Observação</span>
             <textarea className="input min-h-24" value={client.observacao} onChange={(event) => update({ observacao: event.target.value })} />
@@ -621,7 +643,7 @@ function ClientForm({
       <section className="card">
         <h2 className="section-title mb-4">Endereço</h2>
         <div className="grid gap-4 md:grid-cols-6">
-          <Field label="CEP" value={client.endereco.cep} onChange={(value) => updateAddress("cep", value)} className="md:col-span-1" />
+          <Field label="CEP" value={client.endereco.cep} onChange={(value) => updateAddress("cep", maskCEP(value))} className="md:col-span-1" />
           <Field label="Logradouro" value={client.endereco.logradouro} onChange={(value) => updateAddress("logradouro", value)} className="md:col-span-3" />
           <Field label="Número" value={client.endereco.numero} onChange={(value) => updateAddress("numero", value)} className="md:col-span-2" />
           <Field label="Complemento" value={client.endereco.complemento} onChange={(value) => updateAddress("complemento", value)} className="md:col-span-2" />
