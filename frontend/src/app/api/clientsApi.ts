@@ -7,7 +7,7 @@ export async function getClients() {
 }
 
 export async function saveClient(client: Partial<Client>) {
-  const { data } = client.id ? await api.put<Client>(`/clients/${client.id}`, client) : await api.post<Client>("/clients", client);
+  const { data } = client.id ? await api.patch<Client>(`/clients/${client.id}`, client) : await api.post<Client>("/clients", client);
   return data;
 }
 
@@ -19,4 +19,9 @@ export async function deleteClient(id: string) {
 export async function addInsurance(clientId: string, insurance: Partial<Insurance>) {
   const { data } = await api.post<Insurance>(`/clients/${clientId}/insurances`, insurance);
   return data;
+}
+
+export async function updateInsurance(clientId: string, insuranceId: string, data: Partial<Insurance>) {
+  const { data: res } = await api.patch<Insurance>(`/clients/${clientId}/insurances/${insuranceId}`, data);
+  return res;
 }

@@ -69,37 +69,52 @@ function addMonths(date: Date, months: number) {
   return next;
 }
 
-function computeRenewals(clients: Client[], rangeStart: string, rangeEnd: string): { active: RenewalRow[]; expiring: RenewalRow[] } {
-  const start = new Date(rangeStart);
-  const end = new Date(rangeEnd);
-  const today = new Date();
-  const active: RenewalRow[] = [];
-  const expiring: RenewalRow[] = [];
+function computeRenewals(clients: Client[], rangeStart: string, rangeEnd: string): { novos: any[]; expiring: any[] } {
+  const start = new Date(`${rangeStart}T00:00:00`);
+  const end = new Date(`${rangeEnd}T23:59:59`);
+  const novos: any[] = [];
+  const expiring: any[] = [];
 
   for (const client of clients) {
     for (const seguro of client.seguros) {
-      const inicio = new Date(seguro.inicioVigencia);
-      const fim = seguro.fimVigencia ? new Date(seguro.fimVigencia) : null;
-      const overlapsRange = inicio <= end && (fim === null || fim >= start);
-      if (!overlapsRange) continue;
+      const inicio = new Date(`${seguro.inicioVigencia}T00:00:00`);
+      const fim = seguro.fimVigencia ? new Date(`${seguro.fimVigencia}T00:00:00`) : null;
 
-      if (fim === null) {
-        active.push({ cliente: client.nome, tipo: seguro.tipoNome, vinculo: seguro.vinculoNome, inicio: seguro.inicioVigencia, fim: null, status: "Ativo" });
-        continue;
+      // 1. Seguros NOVOS (O Início da vigência está dentro do período selecionado)
+      if (inicio >= start && inicio <= end) {
+        novos.push({ 
+          clientId: client.id, 
+          seguroId: seguro.id, 
+          cliente: client.nome, 
+          tipo: seguro.tipoNome, 
+          vinculo: seguro.vinculoNome, 
+          inicio: seguro.inicioVigencia, 
+          fim: seguro.fimVigencia, 
+          status: "Novo" 
+        });
       }
 
-      if (fim < today) continue; // já expirado, fora do escopo destas duas tabelas
-
-      const dias = Math.ceil((fim.getTime() - today.getTime()) / 86_400_000);
-      if (fim <= end) {
-        expiring.push({ cliente: client.nome, tipo: seguro.tipoNome, vinculo: seguro.vinculoNome, fim: seguro.fimVigencia, dias, status: "Expirando" });
-      } else {
-        active.push({ cliente: client.nome, tipo: seguro.tipoNome, vinculo: seguro.vinculoNome, inicio: seguro.inicioVigencia, fim: seguro.fimVigencia, status: "Ativo" });
+      // 2. Seguros EXPIRANDO (O Fim da vigência está dentro do período selecionado)
+      // Ignora seguros de vida (onde fim === null)
+      if (fim !== null && fim >= start && fim <= end) {
+        const dias = Math.ceil((fim.getTime() - new Date().getTime()) / 86_400_000);
+        expiring.push({ 
+          clientId: client.id, 
+          seguroId: seguro.id, 
+          cliente: client.nome, 
+          tipo: seguro.tipoNome, 
+          vinculo: seguro.vinculoNome, 
+          fim: seguro.fimVigencia, 
+          dias, 
+          status: "Expirando" 
+        });
       }
     }
   }
-  return { active, expiring };
+  
+  return { novos, expiring };
 }
+
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
@@ -120,9 +135,16 @@ export default function App() {
   const [insuranceModal, setInsuranceModal] = useState(false);
   const [toast, setToast] = useState("");
 
-  const [rangeStart, setRangeStart] = useState(() => toISODate(new Date()));
-  const [rangeEnd, setRangeEnd] = useState(() => toISODate(addMonths(new Date(), 4)));
-
+  const [rangeStart, setRangeStart] = useState(() => {
+      const d = new Date();
+      return toISODate(new Date(d.getFullYear(), d.getMonth(), 1));
+    });
+    
+    const [rangeEnd, setRangeEnd] = useState(() => {
+      const d = new Date();
+      return toISODate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+    });
+  const [renewingRow, setRenewingRow] = useState<any>(null);
   const role = currentUser?.role || "Funcionário";
   const isManager = role === "Manager" || role === "SuperAdmin";
   const ownVinculo = currentUser?.vinculos[0] || "";
@@ -133,7 +155,7 @@ export default function App() {
     return clients.filter((client) => client.vinculos.includes(ownVinculo));
   }, [clients, currentUser, ownVinculo]);
 
-  const { active: activeRenewals, expiring: expiringRenewals } = useMemo(
+  const { novos: activeRenewals, expiring: expiringRenewals } = useMemo(
     () => computeRenewals(visibleClients, rangeStart, rangeEnd),
     [visibleClients, rangeStart, rangeEnd]
   );
@@ -231,10 +253,50 @@ export default function App() {
   async function saveClient(client: Client) {
     try {
       const saved = await clientsApi.saveClient(client);
+      const novosSeguros = client.seguros.filter((seguro) => String(seguro.id).startsWith("s"));
+      const segurosCriados = [];
+      for (const seguro of novosSeguros) {
+        const payload = {
+          tipoId: Number(seguro.tipoId), // Garantindo que vai como número para o Zod
+          vinculoId: Number(seguro.vinculoId), // Garantindo que vai como número para o Zod
+          inicioVigencia: seguro.inicioVigencia,
+          fimVigencia: seguro.fimVigencia || null, // Se estiver vazio, manda null
+        };
+        const criado = await clientsApi.addInsurance(saved.id, payload);
+        segurosCriados.push(criado);
+      }
+      const segurosAntigos = client.seguros.filter((seguro) => !String(seguro.id).startsWith("s"));
+      saved.seguros = [...segurosAntigos, ...segurosCriados];
+
+
       setClients((prev) => (client.id ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
       setSelectedClient(saved);
       setScreen("clientProfile");
       notify("Cliente salvo com sucesso.");
+    } catch (error) {
+      notify(normalizeApiError(error).message);
+    }
+  }
+  async function handleRenew(clientId: string, insuranceId: string, novaData: string) {
+    try {
+      // 1. Atualiza no backend
+      await clientsApi.updateInsurance(clientId, insuranceId, { fimVigencia: novaData });
+      
+      // 2. Atualiza a tela localmente
+      setClients((prev) =>
+        prev.map((c) => {
+          if (c.id === clientId) {
+            return {
+              ...c,
+              seguros: c.seguros.map((s) => (s.id === insuranceId ? { ...s, fimVigencia: novaData } : s)),
+            };
+          }
+          return c;
+        })
+      );
+      
+      notify("Data de renovação atualizada com sucesso!");
+      setRenewingRow(null); // Fecha o modal
     } catch (error) {
       notify(normalizeApiError(error).message);
     }
@@ -312,7 +374,7 @@ export default function App() {
             rangeEnd={rangeEnd}
             onRangeStartChange={setRangeStart}
             onRangeEndChange={setRangeEnd}
-            onRenew={() => openClientForm()}
+            onRenew={(row:any) => setRenewingRow(row)}
           />
         )}
         {screen === "clients" && (
@@ -360,6 +422,13 @@ export default function App() {
             setEditingClient((client) => (client ? { ...client, seguros: [...client.seguros, { ...insurance, id: `s${Date.now()}` }] } : client));
             setInsuranceModal(false);
           }}
+        /> 
+      )}
+      {renewingRow && (
+        <RenewModal
+          row={renewingRow}
+          onClose={() => setRenewingRow(null)}
+          onSave={handleRenew}
         />
       )}
     </div>
@@ -456,7 +525,7 @@ function Dashboard({
   rangeEnd: string;
   onRangeStartChange: (value: string) => void;
   onRangeEndChange: (value: string) => void;
-  onRenew: () => void;
+  onRenew: (row:any) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -488,7 +557,6 @@ function Dashboard({
           <p className="text-sm text-textSecondary">Carregando dados...</p>
         ) : (
           <>
-            <RenewalTable title="Ativos no período" rows={activeRenewals} mode="active" />
             <div className="mt-8">
               <RenewalTable title="Expirando no período" rows={expiringRenewals} mode="expiring" onRenew={onRenew} />
             </div>
@@ -856,7 +924,7 @@ function OwnProfile({ user, setUser, notify }: { user: User; setUser: (user: Use
   );
 }
 
-function RenewalTable({ title, rows, mode, onRenew }: { title: string; rows: RenewalRow[]; mode: "active" | "expiring"; onRenew?: () => void }) {
+function RenewalTable({ title, rows, mode, onRenew }: { title: string; rows: any[]; mode: "active" | "expiring"; onRenew?: (row:any) => void }) {
   return (
     <div>
       <h3 className="mb-3 text-base font-semibold">{title}</h3>
@@ -877,7 +945,7 @@ function RenewalTable({ title, rows, mode, onRenew }: { title: string; rows: Ren
                   {mode === "active" && <td>{row.inicio ? formatDate(row.inicio) : "—"}</td>}
                   <td>{row.fim ? formatDate(row.fim) : "Sem vencimento"}</td>
                   {mode === "active" ? <td><StatusBadge status="Ativo" /></td> : <td>{row.dias} dias</td>}
-                  {mode === "expiring" && <td><button className="btn-primary btn-small" onClick={onRenew}>Renovar</button></td>}
+                  {mode === "expiring" && <td><button className="btn-primary btn-small" onClick={()=>onRenew && onRenew(row)}>Renovar</button></td>}
                 </tr>
               ))}
             </tbody>
@@ -907,6 +975,40 @@ function InsuranceCards({ user, insurances, editable }: { user: User; insurances
           </div>
         </article>
       ))}
+    </div>
+  );
+}
+function RenewModal({
+  row,
+  onClose,
+  onSave,
+}: {
+  row: any;
+  onClose: () => void;
+  onSave: (clientId: string, insuranceId: string, novaData: string) => void;
+}) {
+  const [novaData, setNovaData] = useState(row.fim || "");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4">
+      <section className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="section-title">Renovar Seguro</h2>
+          <button className="icon-button" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="space-y-4">
+          <p className="text-sm text-textSecondary">
+            <strong>Cliente:</strong> {row.cliente}<br />
+            <strong>Seguro:</strong> {row.tipo}<br />
+            <strong>Vencimento atual:</strong> {formatDate(row.fim)}
+          </p>
+          <Field label="Nova data de vencimento" type="date" value={novaData} onChange={setNovaData} />
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button className="btn-outline" onClick={onClose}>Cancelar</button>
+          <button className="btn-primary" onClick={() => onSave(row.clientId, row.seguroId, novaData)}>Atualizar Data</button>
+        </div>
+      </section>
     </div>
   );
 }

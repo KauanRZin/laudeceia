@@ -42,7 +42,7 @@ router.post("/", validate(createClientSchema), asyncHandler(controller.create));
  *     summary: Exclui cliente
  */
 router.get("/:id", validate(clientIdSchema), asyncHandler(controller.getById));
-router.put("/:id", validate(updateClientSchema), asyncHandler(controller.update));
+router.patch("/:id", validate(updateClientSchema), asyncHandler(controller.update));
 router.delete("/:id", validate(clientIdSchema), asyncHandler(controller.remove));
 
 /**
@@ -61,7 +61,7 @@ router.post("/:id/insurances", validate(createInsuranceSchema), asyncHandler(con
  *   delete:
  *     summary: Remove seguro do cliente
  */
-router.put("/:id/insurances/:insuranceId", validate(updateInsuranceSchema), asyncHandler(controller.updateInsurance));
+router.patch("/:id/insurances/:insuranceId", validate(updateInsuranceSchema), asyncHandler(controller.updateInsurance));
 router.delete("/:id/insurances/:insuranceId", asyncHandler(controller.removeInsurance));
 
 module.exports = router;

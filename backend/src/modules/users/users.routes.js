@@ -31,7 +31,7 @@ router.post("/", validate(createUserSchema), asyncHandler(controller.create));
  *   put:
  *     summary: Atualiza o próprio perfil
  */
-router.put("/me", validate(ownProfileSchema), asyncHandler(controller.updateMe));
+router.patch("/me", validate(ownProfileSchema), asyncHandler(controller.updateMe));
 
 /**
  * @openapi
@@ -42,7 +42,7 @@ router.put("/me", validate(ownProfileSchema), asyncHandler(controller.updateMe))
  *     summary: Atualiza usuário
  */
 router.get("/:id", validate(userIdSchema), asyncHandler(controller.getById));
-router.put("/:id", validate(updateUserSchema), asyncHandler(controller.update));
+router.patch("/:id", validate(updateUserSchema), asyncHandler(controller.update));
 
 /**
  * @openapi
