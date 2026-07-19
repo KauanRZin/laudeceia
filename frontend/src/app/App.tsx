@@ -4,6 +4,10 @@ import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
   Download,
   Edit,
   Eye,
@@ -588,11 +592,42 @@ function ClientList({
 }) {
   const [search, setSearch] = useState("");
   const [vinculo, setVinculo] = useState("Todos");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc" | null>(null);
+  const itemsPerPage = 15;
+
   const filtered = clients.filter((client) => {
-    const bySearch = client.nome.toLowerCase().includes(search.toLowerCase()) || client.cpf.includes(search);
+    const term = search.toLowerCase();
+    const bySearch =
+      client.nome.toLowerCase().includes(term) ||
+      client.cpf.includes(search) ||
+      (client.observacao || "").toLowerCase().includes(term);
     const byVinculo = vinculo === "Todos" || client.vinculos.includes(vinculo);
     return bySearch && byVinculo;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, vinculo]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+
+  const pageClients = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const displayedClients = sortDirection
+    ? [...pageClients].sort((a, b) =>
+        sortDirection === "asc" ? a.nome.localeCompare(b.nome, "pt-BR") : b.nome.localeCompare(a.nome, "pt-BR")
+      )
+    : pageClients;
+
+  function toggleSort() {
+    setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -610,7 +645,7 @@ function ClientList({
         <div className="mb-4 grid gap-3 md:grid-cols-[1fr_240px]">
           <div className="relative">
             <Search className="absolute left-3 top-3 text-textSecondary" size={18} />
-            <input className="input pl-10" placeholder="Buscar por nome ou CPF" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <input className="input pl-10" placeholder="Buscar por nome, CPF ou observação" value={search} onChange={(event) => setSearch(event.target.value)} />
           </div>
           {(user.role === "Manager" || user.role === "SuperAdmin") && (
             <select className="input" value={vinculo} onChange={(event) => setVinculo(event.target.value)}>
@@ -622,29 +657,76 @@ function ClientList({
         {loading ? (
           <p className="text-sm text-textSecondary">Carregando clientes...</p>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Vínculos</th><th>Nº de Seguros</th><th>Ações</th></tr></thead>
-              <tbody>
-                {filtered.map((client) => (
-                  <tr key={client.id}>
-                    <td className="font-medium">{client.nome}</td>
-                    <td>{client.cpf}</td>
-                    <td>{client.telefone}</td>
-                    <td><Pills values={client.vinculos} /></td>
-                    <td>{client.seguros.length}</td>
-                    <td>
-                      <div className="flex gap-1">
-                        <IconButton label="Visualizar" onClick={() => onView(client)}><Eye size={17} /></IconButton>
-                        <IconButton label="Editar" onClick={() => onEdit(client)}><Edit size={17} /></IconButton>
-                        {(user.role === "Manager" || user.role === "SuperAdmin") && <IconButton label="Excluir" danger onClick={() => onDelete(client.id)}><Trash2 size={17} /></IconButton>}
-                      </div>
-                    </td>
+          <>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <button type="button" className="flex items-center gap-1 font-semibold" onClick={toggleSort}>
+                        Nome
+                        {sortDirection === "asc" && <ChevronUp size={14} />}
+                        {sortDirection === "desc" && <ChevronDown size={14} />}
+                      </button>
+                    </th>
+                    <th>Observações</th>
+                    <th>CPF</th>
+                    <th>Telefone</th>
+                    <th>Vínculos</th>
+                    <th>Nº de Seguros</th>
+                    <th>Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {displayedClients.map((client) => (
+                    <tr key={client.id}>
+                      <td className="font-medium">{client.nome}</td>
+                      <td className="max-w-[220px] truncate text-sm text-textSecondary" title={client.observacao}>
+                        {client.observacao || "—"}
+                      </td>
+                      <td>{client.cpf}</td>
+                      <td>{client.telefone}</td>
+                      <td><Pills values={client.vinculos} /></td>
+                      <td>{client.seguros.length}</td>
+                      <td>
+                        <div className="flex gap-1">
+                          <IconButton label="Visualizar" onClick={() => onView(client)}><Eye size={17} /></IconButton>
+                          <IconButton label="Editar" onClick={() => onEdit(client)}><Edit size={17} /></IconButton>
+                          {(user.role === "Manager" || user.role === "SuperAdmin") && <IconButton label="Excluir" danger onClick={() => onDelete(client.id)}><Trash2 size={17} /></IconButton>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {displayedClients.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-sm text-textSecondary">Nenhum cliente encontrado.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-sm text-textSecondary">
+                Página {currentPage} de {totalPages} · {filtered.length} cliente{filtered.length === 1 ? "" : "s"}
+              </p>
+              <div className="flex items-center gap-2">
+                <IconButton
+                  label="Página anterior"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                >
+                  <ChevronLeft size={17} />
+                </IconButton>
+                <IconButton
+                  label="Próxima página"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                >
+                  <ChevronRight size={17} />
+                </IconButton>
+              </div>
+            </div>
+          </>
         )}
       </section>
     </div>
