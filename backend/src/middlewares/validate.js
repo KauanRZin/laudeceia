@@ -13,6 +13,7 @@ const validate = (schema) => (req, _res, next) => {
       const path = issue.path.filter((part) => part !== "body" && part !== "params" && part !== "query").join(".");
       details[path || "payload"] = issue.message;
     }
+    console.log(details);
     return next(new AppError("Payload inválido", 400, "VALIDATION_ERROR", details));
   }
 

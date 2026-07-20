@@ -60,7 +60,7 @@ function makeBlankInsurance(defaultType?: InsuranceType, defaultVinculo?: Vincul
 }
 
 function makeBlankUser(defaultVinculo: string): User {
-  return { id: "", nome: "", email: "", role: "Funcionário", vinculos: defaultVinculo ? [defaultVinculo] : [], status: "Ativo" };
+  return { id: "", nome: "", email: "",password:"" ,role: "Funcionário", vinculos: defaultVinculo ? [defaultVinculo] : [], status: "Ativo" };
 }
 
 function toISODate(date: Date) {
@@ -961,26 +961,93 @@ function UserManagement({ users, loading, onNew, onEdit, onToggle }: { users: Us
 }
 
 function UserForm({ user, vinculos, setUser, onCancel, onSave }: { user: User; vinculos: string[]; setUser: (user: User | ((user: User) => User)) => void; onCancel: () => void; onSave: (user: User) => void }) {
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const update = (patch: Partial<User>) => setUser((current) => ({ ...current, ...patch }));
+
+  function handleSubmit() {
+    const newErrors: Record<string, string> = {};
+    if (!user.nome || user.nome.trim().length < 3) {
+      newErrors.nome = "Nome é obrigatório (mín. 3 caracteres).";
+    }
+    if (!user.email || !/^\S+@\S+\.\S+$/.test(user.email)) {
+      newErrors.email = "Informe um e-mail válido.";
+    }
+    if (!user.id && (!user.password || user.password.length < 6)) {
+      newErrors.senha = "Senha é obrigatória (mín. 6 caracteres).";
+    } else if (user.id && user.password && user.password.length < 6) {
+      newErrors.senha = "A nova senha deve ter no mínimo 6 caracteres.";
+    }
+
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length === 0) {
+      onSave(user);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Breadcrumb items={["Usuários", user.nome || "Novo Usuário"]} onBack={onCancel} />
       <section className="card max-w-3xl">
         <h1 className="page-title mb-5">{user.id ? "Editar Usuário" : "Novo Usuário"}</h1>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Nome Completo" value={user.nome} onChange={(value) => update({ nome: value })} />
-          <Field label="E-mail" value={user.email} onChange={(value) => update({ email: value })} />
-          <Select label="Perfil" value={user.role} onChange={(value) => update({ role: value as Role, vinculos: value === "Manager" ? user.vinculos : [user.vinculos[0] || vinculos[0] || ""] })} options={["Manager", "Funcionário"]} />
-          <Select label="Vínculo" value={user.vinculos[0] || ""} onChange={(value) => update({ vinculos: [value] })} options={vinculos} />
+          <Field 
+            label="Nome Completo" 
+            value={user.nome} 
+            onChange={(value) => { update({ nome: value }); setErrors({ ...errors, nome: "" }); }} 
+            error={errors.nome} 
+          />
+          
+          <Field 
+            label="E-mail" 
+            value={user.email} 
+            onChange={(value) => { update({ email: value }); setErrors({ ...errors, email: "" }); }} 
+            error={errors.email} 
+          />
+          
+          <Field 
+            label={user.id ? "Nova Senha (opcional)" : "Senha"} 
+            value={user.password || ""} 
+            onChange={(value) => { update({ password: value }); setErrors({ ...errors, password: "" }); }} 
+            type="password"
+            error={errors.senha} 
+          />
+          
+          <Select 
+            label="Perfil" 
+            value={user.role} 
+            onChange={(value) => {
+              const newRole = value as Role;
+              update({ 
+                role: newRole, 
+                vinculos: newRole === "Manager" ? vinculos : [user.vinculos[0] || vinculos[0] || ""] 
+              });
+            }} 
+            options={["Manager", "Funcionário"]} 
+          />
+
+          {user.role === "Manager" ? (
+            <div className="flex flex-col justify-center rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-primary">
+              <span className="font-semibold">Acesso Total</span>
+              <span>Gerentes têm vínculo automático com todas as seguradoras.</span>
+            </div>
+          ) : (
+            <Select 
+              label="Vínculo" 
+              value={user.vinculos[0] || ""} 
+              onChange={(value) => update({ vinculos: [value] })} 
+              options={vinculos} 
+            />
+          )}
+
           <label className="flex items-center gap-3 rounded-lg border border-borderSoft p-3">
             <input type="checkbox" checked={user.status === "Ativo"} onChange={(event) => update({ status: event.target.checked ? "Ativo" : "Inativo" })} />
             <span className="text-sm font-medium">Status Ativo</span>
           </label>
-          <p className="text-sm text-textSecondary">Funcionários devem ter apenas 1 vínculo. Gerentes podem ter múltiplos.</p>
         </div>
+        
         <div className="mt-6 flex justify-end gap-2">
           <button className="btn-outline" onClick={onCancel}>Cancelar</button>
-          <button className="btn-primary" onClick={() => onSave(user)}>Salvar Usuário</button>
+          <button className="btn-primary" onClick={handleSubmit}>Salvar Usuário</button>
         </div>
       </section>
     </div>
@@ -1095,25 +1162,38 @@ function RenewModal({
   );
 }
 
-function Field({ label, value, onChange, type = "text", placeholder, className = "" }: { label: string; value: string; onChange: (value: string) => void; type?: string; placeholder?: string; className?: string }) {
+function Field({ label, value, onChange, type = "text", placeholder, className = "", error }: { label: string; value: string; onChange: (value: string) => void; type?: string; placeholder?: string; className?: string; error?: string }) {
   return (
     <label className={`block ${className}`}>
       <span className="label">{label}</span>
-      <input className="input" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <input 
+        className={`input ${error ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}`} 
+        type={type} 
+        value={value} 
+        placeholder={placeholder} 
+        onChange={(event) => onChange(event.target.value)} 
+      />
+      {error && <span className="mt-1 block text-xs font-medium text-red-500">{error}</span>}
     </label>
   );
 }
 
-function Select({ label, value, onChange, options, disabled }: { label: string; value: string; onChange: (value: string) => void; options: Array<string | { label: string; value: string }>; disabled?: boolean }) {
+function Select({ label, value, onChange, options, disabled, error }: { label: string; value: string; onChange: (value: string) => void; options: Array<string | { label: string; value: string }>; disabled?: boolean; error?: string }) {
   return (
     <label className="block">
       <span className="label">{label}</span>
-      <select className="input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+      <select 
+        className={`input ${error ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}`} 
+        value={value} 
+        disabled={disabled} 
+        onChange={(event) => onChange(event.target.value)}
+      >
         {options.map((option) => {
           const item = typeof option === "string" ? { label: option, value: option } : option;
           return <option key={item.value} value={item.value}>{item.label}</option>;
         })}
       </select>
+      {error && <span className="mt-1 block text-xs font-medium text-red-500">{error}</span>}
     </label>
   );
 }
