@@ -33,6 +33,7 @@ function serializeUser(user) {
     id: user.id,
     nome: user.nome,
     email: user.email,
+    senha: user.password,
     role: ROLE_TO_API[user.role],
     vinculos: (user.vinculos || []).map((vinculo) => vinculo.nome),
     status: STATUS_TO_API[user.status],
