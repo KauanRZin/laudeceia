@@ -109,6 +109,12 @@ const clients = [
 ];
 
 async function main() {
+  const existingUsers = await prisma.user.count();
+
+  if(existingUsers > 0){
+    console.log("seed ignorado!");
+    return;
+  }
   await prisma.insurance.deleteMany();
   await prisma.client.deleteMany();
   await prisma.user.deleteMany();

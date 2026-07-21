@@ -46,6 +46,7 @@ export interface User {
   id: string;
   nome: string;
   email: string;
+  password: string;
   role: Role;
   vinculos: string[];
   status: Status;

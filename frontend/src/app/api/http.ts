@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import Cookies from "js-cookie";
 
 export const TOKEN_KEY = "segurapro_token";
 
@@ -15,7 +16,7 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = Cookies.get(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
