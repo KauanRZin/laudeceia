@@ -5,6 +5,7 @@ import { formatDate } from "../utils/format";
 import { ConfirmModal } from "../modals/ConfirmModal";
 import { Badge, IconButton } from "./SharedUI";
 
+
 export function InsuranceCards({ user, insurances, editable, onRemove }: { user: User; insurances: Insurance[]; editable?: boolean; onRemove?: (id: string) => void }) {
   const [insuranceToDelete, setInsuranceToDelete] = useState<string | null>(null);
 

@@ -35,7 +35,7 @@ async function list(currentUser) {
 }
 
 async function getById(currentUser, id) {
-  if (currentUser.role !== "MANAGER" && currentUser.id !== id && user.role !== "SUPERADMIN") {
+  if (currentUser.role !== "MANAGER" && currentUser.id !== id && currentUser.role !== "SUPERADMIN") {
     throw new AppError("Você não tem permissão para acessar este usuário", 403, "FORBIDDEN_USER");
   }
   const user = await prisma.user.findUnique({ where: { id }, include: { vinculos: true } });
@@ -73,10 +73,20 @@ async function create(currentUser, data) {
 
 async function update(currentUser, id, data) {
   assertManager(currentUser);
-  await assertNotSuperAdmin(id);
+  const target = await assertNotSuperAdmin(id);
   if (ROLE_FROM_API[data.role] === "SUPERADMIN") {
     throw new AppError("SuperAdmin não pode ser atribuído via API", 403, "SUPERADMIN_PROTECTED");
   }
+
+  if (data.password !== undefined) {
+    const isSamePassword = await bcrypt.compare(data.password, target.passwordHash);
+    if (isSamePassword) {
+      throw new AppError("A nova senha não pode ser igual à senha atual", 400, "SAME_PASSWORD", {
+        password: "A nova senha não pode ser igual à senha atual",
+      });
+    }
+  }
+
   const connect = data.vinculos === undefined ? undefined : await vinculoConnectByNames(data.vinculos);
   try {
     const user = await prisma.user.update({
@@ -104,24 +114,38 @@ async function update(currentUser, id, data) {
 async function updateStatus(currentUser, id, status) {
   assertManager(currentUser);
   await assertNotSuperAdmin(id);
-  const user = await prisma.user.update({
-    where: { id },
-    data: { status: STATUS_FROM_API[status] },
-    include: { vinculos: true },
-  });
-  return serializeUser(user);
+  try {
+    const user = await prisma.user.update({
+      where: { id },
+      data: { status: STATUS_FROM_API[status] },
+      include: { vinculos: true },
+    });
+    return serializeUser(user);
+  } catch (error) {
+    if (error.code === "P2025") {
+      throw new AppError("Usuário não encontrado", 404, "USER_NOT_FOUND");
+    }
+    throw error;
+  }
 }
 
 async function updateMe(currentUser, data) {
-  const user = await prisma.user.update({
-    where: { id: currentUser.id },
-    data: {
-      ...(data.nome !== undefined && { nome: data.nome }),
-      ...(data.avatar !== undefined && { avatar: data.avatar || null }),
-    },
-    include: { vinculos: true },
-  });
-  return serializeUser(user);
+  try {
+    const user = await prisma.user.update({
+      where: { id: currentUser.id },
+      data: {
+        ...(data.nome !== undefined && { nome: data.nome }),
+        ...(data.avatar !== undefined && { avatar: data.avatar || null }),
+      },
+      include: { vinculos: true },
+    });
+    return serializeUser(user);
+  } catch (error) {
+    if (error.code === "P2025") {
+      throw new AppError("Usuário não encontrado", 404, "USER_NOT_FOUND");
+    }
+    throw error;
+  }
 }
 
 module.exports = { list, getById, create, update, updateStatus, updateMe };

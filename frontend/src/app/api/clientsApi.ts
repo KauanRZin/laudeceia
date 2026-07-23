@@ -25,3 +25,7 @@ export async function updateInsurance(clientId: string, insuranceId: string, dat
   const { data: res } = await api.patch<Insurance>(`/clients/${clientId}/insurances/${insuranceId}`, data);
   return res;
 }
+export async function removeInsurance(clientId: string, insuranceId: string) {
+  const { data } = await api.delete(`/clients/${clientId}/insurances/${insuranceId}`);
+  return data;
+}

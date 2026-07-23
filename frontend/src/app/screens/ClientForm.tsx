@@ -6,6 +6,7 @@ import type { Client, User } from "../types/domain";
 import { Field, Select, ActionBar, Breadcrumb } from "../components/SharedUI";
 import { InsuranceCards } from "../components/InsuranceCards";
 import { ClientReviewModal } from "../modals/ClientReviewModal";
+import * as clientsApi from "../api/clientsApi"; 
 
 export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave, onAddInsurance }: any) {
   const isManager = user.role === "Manager" || user.role === "SuperAdmin";
@@ -96,7 +97,23 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
           <h2 className="section-title">Seguros Vinculados</h2>
           <button className="btn-primary" onClick={onAddInsurance}><Plus size={16} /> Adicionar Seguro</button>
         </div>
-        <InsuranceCards user={user} insurances={client.seguros} editable onRemove={(idToRemove) => update({ seguros: client.seguros.filter((s:any) => s.id !== idToRemove) })} />
+        <InsuranceCards 
+            user={user} 
+            insurances={client.seguros} 
+            editable 
+            onRemove={async (idToRemove) => {
+              // Se NÃO for um seguro novo criado agora na tela (que começa com 's'), manda pro backend deletar
+              if (!String(idToRemove).startsWith("s") && client.id) {
+                try {
+                  await clientsApi.removeInsurance(client.id, idToRemove);
+                } catch (e) {
+                  console.error("Erro ao remover seguro no backend", e);
+                  return; // Para aqui e não remove da tela se a API falhar
+                }
+              }
+              // Remove do front-end
+              update({ seguros: client.seguros.filter((s:any) => s.id !== idToRemove) });
+            }} />
       </section>
       <ActionBar>
         <button className="btn-outline" onClick={onCancel}>Cancelar</button>

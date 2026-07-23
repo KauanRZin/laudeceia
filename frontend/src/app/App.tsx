@@ -7,7 +7,7 @@ import * as clientsApi from "./api/clientsApi";
 
 // Hooks
 import { useAuth } from "./hooks/useAuth";
-import { useClients } from "./hooks/useClient";
+import { useClients } from "./hooks/useClient"; // Ajuste o nome da pasta de acordo com seu projeto (useClient ou useClients)
 import { useUsers } from "./screens/UserManagement"; 
 
 // Telas e Componentes
@@ -35,28 +35,23 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [toast, setToast] = useState("");
   
-  // CORREÇÃO 1: useCallback estabiliza a função. Evita o Loop Infinito de requisições na API.
   const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 3600);
   }, []);
 
-  // Dados de Referência Globais
   const [vinculos, setVinculos] = useState<Vinculo[]>([]);
   const [insuranceTypes, setInsuranceTypes] = useState<InsuranceType[]>([]);
 
-  // Estado Efêmero de Edição/Telas
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [insuranceModal, setInsuranceModal] = useState(false);
   const [renewingRow, setRenewingRow] = useState<any>(null);
 
-  // Intervalos do Dashboard
   const [rangeStart, setRangeStart] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); });
   const [rangeEnd, setRangeEnd] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10); });
 
-  // Instanciação da Lógica Extraída
   const { currentUser, setCurrentUser, authChecked, login, logout } = useAuth(notify);
   const { visibleClients, loading: clientsLoading, saveClient, removeClient, setClients } = useClients(currentUser, notify);
   const { users, loading: usersLoading, saveUser, toggleUserStatus } = useUsers(currentUser, notify);
@@ -64,19 +59,17 @@ export default function App() {
   const vinculoNomes = useMemo(() => vinculos.map((item) => item.nome), [vinculos]);
   const isManager = currentUser?.role === "Manager" || currentUser?.role === "SuperAdmin";
 
-  // CORREÇÃO 2: Garante que, ao carregar a sessão ou fazer login, a tela mude de "login" para "dashboard"
   useEffect(() => {
     if (currentUser && screen === "login") {
       setScreen("dashboard");
     }
   }, [currentUser, screen]);
 
-  // Buscar referências globais
   useEffect(() => {
     if (!currentUser) return;
     getVinculos().then(setVinculos).catch((err) => notify(normalizeApiError(err).message));
     getInsuranceTypes().then(setInsuranceTypes).catch((err) => notify(normalizeApiError(err).message));
-  }, [currentUser, notify]); // Agora é seguro passar notify aqui
+  }, [currentUser, notify]); 
 
   async function handleRenew(clientId: string, insuranceId: string, novaData: string) {
     try {
@@ -87,15 +80,12 @@ export default function App() {
     } catch (error) { notify(normalizeApiError(error).message); }
   }
 
-  // Wrapper do login para facilitar a transição visual manual, caso necessário
   async function handleLogin(email: string, password: string) {
     await login(email, password);
     setScreen("dashboard");
   }
 
   if (!authChecked) return <div className="flex min-h-screen items-center justify-center bg-appBg text-textSecondary">Carregando...</div>;
-  
-  // Passando a nossa função modificada handleLogin
   if (!currentUser) return <LoginScreen onLogin={handleLogin} toast={toast} />;
 
   return (
@@ -128,14 +118,23 @@ export default function App() {
         )}
 
         {screen === "users" && isManager && (
-          <UserManagement users={users} loading={usersLoading} onToggle={toggleUserStatus} 
+          <UserManagement 
+            currentUser={currentUser} /* <-- Passando o currentUser para travar a tela */
+            users={users} 
+            loading={usersLoading} 
+            onToggle={toggleUserStatus} 
             onNew={() => { setEditingUser(makeBlankUser(vinculoNomes[0])); setScreen("userForm"); }} 
             onEdit={(u: User) => { setEditingUser(structuredClone(u)); setScreen("userForm"); }} 
           />
         )}
 
         {screen === "userForm" && isManager && editingUser && (
-          <UserForm user={editingUser} vinculos={vinculoNomes} setUser={setEditingUser} onCancel={() => setScreen("users")} 
+          <UserForm 
+            currentUser={currentUser} /* <-- Passando o currentUser para travar o formulário */
+            user={editingUser} 
+            vinculos={vinculoNomes} 
+            setUser={setEditingUser} 
+            onCancel={() => setScreen("users")} 
             onSave={(user: User) => { saveUser(user); setScreen("users"); }} 
           />
         )}

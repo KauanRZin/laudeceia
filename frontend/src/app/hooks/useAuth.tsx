@@ -3,6 +3,7 @@ import type { User } from "../types/domain";
 import * as authApi from "../api/authApi";
 import { TOKEN_KEY } from "../api/http";
 import { normalizeApiError } from "../api/http";
+import Cookies from "js-cookie";
 
 
 export function useAuth(notify: (msg: string) => void) {
@@ -10,7 +11,7 @@ export function useAuth(notify: (msg: string) => void) {
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = Cookies.get(TOKEN_KEY);
     if (!token) {
       setAuthChecked(true);
       return;
