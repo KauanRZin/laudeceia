@@ -12,6 +12,31 @@ const insuranceTypesRoutes = require("./modules/insuranceTypes/insuranceTypes.ro
 
 const app = express();
 
+app.use(helmet());
+app.use(cors({ origin: env.corsOrigin, credentials: true }));
+app.use(express.json());
+ 
+// Rate limit geral pra API inteira (protege contra abuso/scraping básico)
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(generalLimiter);
+ 
+// Rate limit mais restrito só pras rotas de autenticação (login, forgot-password, etc)
+// Protege contra brute force de senha e spam de e-mail/whatsapp de reset
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: "Muitas tentativas. Tente novamente em alguns minutos.", code: "TOO_MANY_ATTEMPTS" } },
+});
+app.use("/auth", authLimiter);
+
+
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.use(express.json());
 

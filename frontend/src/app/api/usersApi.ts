@@ -7,7 +7,6 @@ export async function getUsers() {
 }
 
 export async function saveUser(user: Partial<User> & { password?: string }) {
-  console.log("Saving user:", user);
   const { data } = user.id ? await api.patch<User>(`/users/${user.id}`, user) : await api.post<User>("/users", user);
   return data;
 }
