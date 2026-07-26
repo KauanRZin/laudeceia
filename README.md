@@ -43,8 +43,4 @@ Siga os passos abaixo para rodar o projeto na sua máquina:
 - Gerenciador de pacotes (NPM ou Yarn)
 - Banco de dados configurado (PostgreSQL/MySQL - *ver `.env`*)
 
-### Instalação
 
-1. Clone este repositório:
-```bash
-git clone [https://github.com/KauanRZin/laudeceia.git](https://github.com/KauanRZin/laudeceia.git)
