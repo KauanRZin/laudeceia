@@ -3,8 +3,9 @@ import { Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Upload, Down
 import type { Client, User } from "../types/domain";
 import { Banner, IconButton, Pills } from "../components/SharedUI";
 import { ConfirmModal } from "../modals/ConfirmModal";
+import { ImportadorPlanilha } from "../components/importSistem";
 
-export function ClientList({ user, clients, vinculos, loading, onNew, onEdit, onView, onDelete }: any) {
+export function ClientList({ user, clients, vinculos, loading, onNew, onEdit, onView, onDelete ,onImport}: any) {
   const [search, setSearch] = useState("");
   const [vinculo, setVinculo] = useState("Todos");
   const [currentPage, setCurrentPage] = useState(1);
@@ -36,7 +37,10 @@ export function ClientList({ user, clients, vinculos, loading, onNew, onEdit, on
           {user.role === "Funcionário" && <Banner>Exibindo clientes do seu vínculo: {user.vinculos[0]}</Banner>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-outline"><Upload size={16} /> Importar Dados</button>
+          <ImportadorPlanilha 
+            onImport={onImport} 
+            vinculoPadrao={user.vinculos[0] || vinculos[0]} 
+          />
           <button className="btn-outline"><Download size={16} /> Exportar Dados</button>
           <button className="btn-primary" onClick={onNew}><Plus size={16} /> Novo Cliente</button>
         </div>

@@ -104,6 +104,19 @@ export default function App() {
             onEdit={(client: Client) => { setEditingClient(structuredClone(client)); setScreen("clientForm"); }}
             onView={(client: Client) => { setSelectedClient(client); setScreen("clientProfile"); }}
             onDelete={removeClient}
+            onImport={async (clientesLidos: Client[]) => {
+            notify(`Iniciando importação de ${clientesLidos.length} clientes...`);
+            let salvos = 0;
+            for (const c of clientesLidos) {
+              try {
+                await saveClient(c);
+                salvos++;
+              } catch (err) {
+                console.error("Falha ao salvar", c.nome);
+              }
+            }
+            notify(`Importação concluída! ${salvos} clientes salvos.`);
+          }}
           />
         )}
         
