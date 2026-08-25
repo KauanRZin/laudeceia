@@ -4,7 +4,7 @@ const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-const VINCULOS = ["LAUDYS Corretora", "LAUDYS Corretora Agencia Limoeiro", "LAUDYS Corretora Agencia Surubim", "Agência 2"];
+const VINCULOS = ["LAUDYS Corretora", "LAUDYS Corretora Agencia Limoeiro", "LAUDYS Corretora Agencia Surubim"];
 const INSURANCE_TYPES = [
   { id: 1, nome: "Seguro de Vida" },
   { id: 2, nome: "Seguro Residencial" },

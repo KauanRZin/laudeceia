@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import * as xlsx from 'xlsx';
 import { Upload, Loader2 } from 'lucide-react';
 import type { Client, Insurance } from '../types/domain';
-
+//REFAZER A LOGICA DE TIRAR OS DADOS DAS PLANILHAS
 interface ImportadorProps {
   onImport: (clientes: Client[]) => void;
   vinculoPadrao: string;

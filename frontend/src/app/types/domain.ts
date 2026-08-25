@@ -62,3 +62,16 @@ export interface RenewalRow {
   dias?: number;
   status: "Ativo" | "Expirando" | "Expirado";
 }
+
+export function Vinculo(vinculo:string){
+  switch(vinculo){
+    case "9879":
+      return "LAUDYS Corretora Agencia Limoeiro";
+    case "9880":
+      return "LAUDYS Corretora Agencia Surubim";
+    case "9881":
+      return "LAUDYS Corretora";
+    default:
+      return vinculo;
+  }
+}
