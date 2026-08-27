@@ -31,6 +31,11 @@ async function updateInsurance(req, res) {
 async function removeInsurance(req, res) {
   res.json(await service.removeInsurance(req.user, req.params.id, req.params.insuranceId));
 }
+async function importSpreadsheet(req, res) {
+  // Passa o usuário logado (req.user) e os dados brutos da planilha (req.body) para o service
+  const result = await service.importSpreadsheet(req.user, req.body);
+  res.status(200).json(result);
+}
 
 module.exports = {
   list,
@@ -41,4 +46,5 @@ module.exports = {
   addInsurance,
   updateInsurance,
   removeInsurance,
+  importSpreadsheet
 };

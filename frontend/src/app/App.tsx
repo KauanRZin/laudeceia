@@ -79,6 +79,28 @@ export default function App() {
       setRenewingRow(null);
     } catch (error) { notify(normalizeApiError(error).message); }
   }
+  // No App.tsx, atualize a função handleImport:
+
+  async function handleImport(importacao: any, vinculoPadrao: string) {
+    try {
+      notify(`Iniciando importação...`);
+
+      // 👇 AGORA ELE CHAMA A SUA API DE VERDADE
+      const data = await clientsApi.importClientsSpreadsheet({
+        ...importacao,
+        vinculoPadrao,
+      });
+
+      notify(`Importação concluída! ${data.count || 0} processados.`);
+      
+      // Opcional: Atualizar a lista chamando o backend de novo (se você tiver uma função loadClients)
+      // loadClients();
+
+    } catch (error: any) {
+      console.error("Erro na importação:", error);
+      notify(normalizeApiError(error).message || "Falha ao importar planilha");
+    }
+  }
 
   async function handleLogin(email: string, password: string) {
     await login(email, password);
@@ -104,19 +126,7 @@ export default function App() {
             onEdit={(client: Client) => { setEditingClient(structuredClone(client)); setScreen("clientForm"); }}
             onView={(client: Client) => { setSelectedClient(client); setScreen("clientProfile"); }}
             onDelete={removeClient}
-            onImport={async (clientesLidos: Client[]) => {
-            notify(`Iniciando importação de ${clientesLidos.length} clientes...`);
-            let salvos = 0;
-            for (const c of clientesLidos) {
-              try {
-                await saveClient(c);
-                salvos++;
-              } catch (err) {
-                console.error("Falha ao salvar", c.nome);
-              }
-            }
-            notify(`Importação concluída! ${salvos} clientes salvos.`);
-          }}
+            onImport={handleImport}
           />
         )}
         

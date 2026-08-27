@@ -7,9 +7,8 @@ const prisma = new PrismaClient();
 const VINCULOS = ["LAUDYS Corretora", "LAUDYS Corretora Agencia Limoeiro", "LAUDYS Corretora Agencia Surubim"];
 const INSURANCE_TYPES = [
   { id: 1, nome: "Seguro de Vida" },
-  { id: 2, nome: "Seguro Residencial" },
+  { id: 2, nome: "Seguro RE" },
   { id: 3, nome: "Seguro Auto" },
-  { id: 4, nome: "Seguro Empresarial" },
 ];
 
 const clients = [

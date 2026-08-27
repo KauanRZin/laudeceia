@@ -1,11 +1,34 @@
 import { useState, useEffect } from "react";
-import { Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Upload, Download, Plus, Eye, Edit, Trash2 } from "lucide-react";
+import { Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Download, Plus, Eye, Edit, Trash2 } from "lucide-react";
 import type { Client, User } from "../types/domain";
 import { Banner, IconButton, Pills } from "../components/SharedUI";
 import { ConfirmModal } from "../modals/ConfirmModal";
 import { ImportadorPlanilha } from "../components/importSistem";
 
-export function ClientList({ user, clients, vinculos, loading, onNew, onEdit, onView, onDelete ,onImport}: any) {
+interface ClientListProps {
+  user: User;
+  clients: Client[];
+  vinculos: string[];
+  loading: boolean;
+  onNew: () => void;
+  onEdit: (client: Client) => void;
+  onView: (client: Client) => void;
+  onDelete: (id: string) => void;
+  // 👇 Mudamos aqui: removida a dependência do App.tsx. Usando 'any' para simplificar o repasse.
+  onImport: (importacao: any, vinculoPadrao: string) => Promise<void>; 
+}
+
+export function ClientList({ 
+  user, 
+  clients, 
+  vinculos, 
+  loading, 
+  onNew, 
+  onEdit, 
+  onView, 
+  onDelete, 
+  onImport 
+}: ClientListProps) {
   const [search, setSearch] = useState("");
   const [vinculo, setVinculo] = useState("Todos");
   const [currentPage, setCurrentPage] = useState(1);
