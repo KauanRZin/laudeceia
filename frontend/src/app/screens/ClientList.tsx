@@ -1,9 +1,48 @@
 import { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import { Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Download, Plus, Eye, Edit, Trash2 } from "lucide-react";
 import type { Client, User } from "../types/domain";
 import { Banner, IconButton, Pills } from "../components/SharedUI";
 import { ConfirmModal } from "../modals/ConfirmModal";
 import { ImportadorPlanilha } from "../components/importSistem";
+import { formatDate } from "../utils/format";
+
+// ---------------------------------------------------------------------------
+// Exportação de clientes (.xlsx)
+// ---------------------------------------------------------------------------
+
+function formatEndereco(endereco?: Client["endereco"]) {
+  if (!endereco) return "—";
+  const partes = [endereco.logradouro, endereco.numero, endereco.complemento, endereco.bairro, endereco.cidade, endereco.estado].filter(Boolean);
+  return partes.length ? partes.join(", ") : "—";
+}
+
+function formatSeguro(seguro?: { inicioVigencia?: string; fimVigencia?: string | null }) {
+  if (!seguro) return "—";
+  const inicio = seguro.inicioVigencia ? formatDate(seguro.inicioVigencia) : "—";
+  const fim = seguro.fimVigencia ? formatDate(seguro.fimVigencia) : "Sem vencimento";
+  return `${inicio} a ${fim}`;
+}
+
+function exportarClientes(lista: Client[], rotuloArquivo: string) {
+  const linhas = lista.map((client) => ({
+    Nome: client.nome,
+    "Data de Nascimento": client.nascimento ? formatDate(client.nascimento) : "—",
+    CPF: client.cpf,
+    Telefone: client.telefone,
+    Endereço: formatEndereco(client.endereco),
+    "Seguro de Vida": formatSeguro(client.seguros.find((s: any) => s.tipoNome === "Seguro Vida")),
+    "Seguro Auto": formatSeguro(client.seguros.find((s: any) => s.tipoNome === "Seguro Auto")),
+    "Seguro RE": formatSeguro(client.seguros.find((s: any) => s.tipoNome === "Seguro RE")),
+  }));
+
+  const planilha = XLSX.utils.json_to_sheet(linhas);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, planilha, "Clientes");
+
+  const dataHoje = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, `clientes_${rotuloArquivo}_${dataHoje}.xlsx`);
+}
 
 interface ClientListProps {
   user: User;
@@ -54,6 +93,11 @@ export function ClientList({
   const pageClients = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const displayedClients = sortDirection ? [...pageClients].sort((a, b) => sortDirection === "asc" ? a.nome.localeCompare(b.nome, "pt-BR") : b.nome.localeCompare(a.nome, "pt-BR")) : pageClients;
 
+  // Exportação respeita só o filtro de vínculo/agência ("Todos" ou uma agência específica),
+  // sem levar em conta o texto da busca — são filtros independentes.
+  const clientsParaExportar = vinculo === "Todos" ? clients : clients.filter((client: Client) => client.vinculos.includes(vinculo));
+  const rotuloExportacao = vinculo === "Todos" ? "todos" : vinculo.trim().replace(/\s+/g, "_").toLowerCase();
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -67,7 +111,12 @@ export function ClientList({
             vinculoPadrao={user.vinculos[0] || vinculos[0]} 
           />
           {isManager && (
-            <button className="btn-outline">
+            <button
+              className="btn-outline disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={clientsParaExportar.length === 0}
+              title={clientsParaExportar.length === 0 ? "Nenhum cliente para exportar com o filtro atual" : undefined}
+              onClick={() => exportarClientes(clientsParaExportar, rotuloExportacao)}
+            >
               <Download size={16} /> Exportar Dados
             </button>
           )}
