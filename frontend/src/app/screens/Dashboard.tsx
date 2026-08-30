@@ -1,8 +1,8 @@
-import { useMemo } from "react";
-import { CalendarDays, Users, CheckCircle2 } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { CalendarDays, Users, CheckCircle2, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Client, User, RenewalRow } from "../types/domain";
 import { formatDate } from "../utils/format";
-import { MetricCard, Banner, StatusBadge } from "../components/SharedUI";
+import { MetricCard, Banner, StatusBadge, IconButton } from "../components/SharedUI";
 
 // Função extraída do original[cite: 2]
 function computeRenewals(clients: Client[], rangeStart: string, rangeEnd: string) {
@@ -25,43 +25,91 @@ function computeRenewals(clients: Client[], rangeStart: string, rangeEnd: string
   return { novos, expiring };
 }
 
-function RenewalTable({ title, rows, mode, onRenew }: { title: string; rows: any[]; mode: "active" | "expiring"; onRenew?: (row:any) => void }) {
+const ITEMS_PER_PAGE = 8;
+
+function RenewalTable({
+  title,
+  rows,
+  mode,
+  onRenew,
+  onViewClient,
+}: {
+  title: string;
+  rows: any[];
+  mode: "active" | "expiring";
+  onRenew?: (row: any) => void;
+  onViewClient?: (clientId: string) => void;
+}) {
+  const [page, setPage] = useState(1);
+
+  // Sempre que a lista de linhas muda (ex: trocou o período do filtro),
+  // volta pra primeira página em vez de deixar o usuário numa página vazia.
+  useEffect(() => setPage(1), [rows]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / ITEMS_PER_PAGE));
+  const pageRows = rows.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
   return (
     <div>
       <h3 className="mb-3 text-base font-semibold">{title}</h3>
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-borderSoft p-5 text-sm text-textSecondary">Nenhum registro no período selecionado.</p>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>{mode === "active" ? ["Cliente", "Tipo de Seguro", "Vínculo", "Início", "Fim", "Status"].map((h) => <th key={h}>{h}</th>) : ["Cliente", "Tipo de Seguro", "Vínculo", "Fim", "Dias restantes", "Ação"].map((h) => <th key={h}>{h}</th>)}</tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={`${row.cliente}-${row.tipo}`}>
-                  <td className="font-medium">{row.cliente}</td>
-                  <td>{row.tipo}</td>
-                  <td>{row.vinculo}</td>
-                  {mode === "active" && <td>{row.inicio ? formatDate(row.inicio) : "—"}</td>}
-                  <td>{row.fim ? formatDate(row.fim) : "Sem vencimento"}</td>
-                  {mode === "active" ? <td><StatusBadge status="Ativo" /></td> : <td>{row.dias} dias</td>}
-                  {mode === "expiring" && <td><button className="btn-primary btn-small" onClick={()=>onRenew && onRenew(row)}>Renovar</button></td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>{mode === "active" ? ["Cliente", "Tipo de Seguro", "Vínculo", "Início", "Fim", "Status", "Ações"].map((h) => <th key={h}>{h}</th>) : ["Cliente", "Tipo de Seguro", "Vínculo", "Fim", "Dias restantes", "Ações"].map((h) => <th key={h}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {pageRows.map((row) => (
+                  <tr key={`${row.clientId}-${row.seguroId}`}>
+                    <td className="font-medium">{row.cliente}</td>
+                    <td>{row.tipo}</td>
+                    <td>{row.vinculo}</td>
+                    {mode === "active" && <td>{row.inicio ? formatDate(row.inicio) : "—"}</td>}
+                    <td>{row.fim ? formatDate(row.fim) : "Sem vencimento"}</td>
+                    {mode === "active" ? <td><StatusBadge status="Ativo" /></td> : <td>{row.dias} dias</td>}
+                    <td>
+                      <div className="flex gap-1">
+                        {onViewClient && (
+                          <IconButton label="Ver detalhes do cliente" onClick={() => onViewClient(row.clientId)}>
+                            <Eye size={16} />
+                          </IconButton>
+                        )}
+                        {mode === "expiring" && (
+                          <button className="btn-primary btn-small" onClick={() => onRenew && onRenew(row)}>Renovar</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <p className="text-sm text-textSecondary">Página {page} de {totalPages}</p>
+            <div className="flex items-center gap-2">
+              <IconButton label="Anterior" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft size={17} /></IconButton>
+              <IconButton label="Próxima" disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}><ChevronRight size={17} /></IconButton>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-export function Dashboard({ user, clients, loading, rangeStart, rangeEnd, onRangeStartChange, onRangeEndChange, onRenew }: any) {
+export function Dashboard({ user, clients, loading, rangeStart, rangeEnd, onRangeStartChange, onRangeEndChange, onRenew, onViewClient }: any) {
   const { novos: activeRenewals, expiring: expiringRenewals } = useMemo(
     () => computeRenewals(clients, rangeStart, rangeEnd),
     [clients, rangeStart, rangeEnd]
   );
+
+  function handleViewClient(clientId: string) {
+    const client = clients.find((c: Client) => c.id === clientId);
+    if (client && onViewClient) onViewClient(client);
+  }
 
   return (
     <div className="space-y-6">
@@ -93,7 +141,7 @@ export function Dashboard({ user, clients, loading, rangeStart, rangeEnd, onRang
           <p className="text-sm text-textSecondary">Carregando dados...</p>
         ) : (
           <div className="mt-8">
-            <RenewalTable title="Expirando no período" rows={expiringRenewals} mode="expiring" onRenew={onRenew} />
+            <RenewalTable title="Expirando no período" rows={expiringRenewals} mode="expiring" onRenew={onRenew} onViewClient={handleViewClient} />
           </div>
         )}
       </section>

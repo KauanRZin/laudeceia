@@ -13,33 +13,48 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showReview, setShowReview] = useState(false);
 
+  // Alguns clientes (ex: importados via planilha) podem chegar com o objeto
+  // endereco incompleto ou até ausente. Isso garante que o resto do
+  // componente sempre trabalhe com um objeto completo, sem quebrar.
+  const endereco = {
+    cep: "",
+    logradouro: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cidade: "",
+    estado: "",
+    ...(client.endereco || {}),
+  };
+
   const update = (patch: Partial<Client>) => setClient((curr: Client) => ({ ...curr, ...patch }));
-  const updateAddress = (key: keyof Client["endereco"], val: string) => setClient((curr: Client) => ({ ...curr, endereco: { ...curr.endereco, [key]: val } }));
+  const updateAddress = (key: keyof Client["endereco"], val: string) => setClient((curr: Client) => ({ ...curr, endereco: { ...endereco, ...curr.endereco, [key]: val } }));
 
   useEffect(() => {
-    const cepLimpo = client.endereco.cep.replace(/\D/g, "");
+    const cepLimpo = (endereco.cep || "").replace(/\D/g, "");
     if (cepLimpo.length === 8) {
       buscarDadosCep(cepLimpo).then((data) => {
         if (data) {
-          setClient((curr: Client) => ({ ...curr, endereco: { ...curr.endereco, logradouro: data.logradouro, bairro: data.bairro, cidade: data.localidade, estado: data.uf } }));
+          setClient((curr: Client) => ({ ...curr, endereco: { ...endereco, ...curr.endereco, logradouro: data.logradouro, bairro: data.bairro, cidade: data.localidade, estado: data.uf } }));
           setErrors((prev) => ({ ...prev, cep: "", logradouro: "", bairro: "", cidade: "", estado: "" }));
         }
       });
     }
-  }, [client.endereco.cep, setClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endereco.cep, setClient]);
 
   function handleRequestSave() {
     const newErrors: Record<string, string> = {};
     if (!client.nome || client.nome.trim().length < 2) newErrors.nome = "Nome é obrigatório.";
-    if (client.cpf.replace(/\D/g, "").length !== 11) newErrors.cpf = "CPF deve ter 11 dígitos.";
+    if ((client.cpf || "").replace(/\D/g, "").length !== 11) newErrors.cpf = "CPF deve ter 11 dígitos.";
     if (!client.nascimento) newErrors.nascimento = "Data de nascimento é obrigatória.";
-    if (client.telefone.replace(/\D/g, "").length < 10) newErrors.telefone = "Telefone inválido.";
-    if (client.endereco.cep.replace(/\D/g, "").length !== 8) newErrors.cep = "CEP inválido.";
-    if (!client.endereco.logradouro) newErrors.logradouro = "Logradouro é obrigatório.";
-    if (!client.endereco.numero) newErrors.numero = "Número é obrigatório.";
-    if (!client.endereco.bairro) newErrors.bairro = "Bairro é obrigatório.";
-    if (!client.endereco.cidade) newErrors.cidade = "Cidade é obrigatória.";
-    if (!client.endereco.estado) newErrors.estado = "Estado é obrigatório.";
+    if ((client.telefone || "").replace(/\D/g, "").length < 10) newErrors.telefone = "Telefone inválido.";
+    if ((endereco.cep || "").replace(/\D/g, "").length !== 8) newErrors.cep = "CEP inválido.";
+    if (!endereco.logradouro) newErrors.logradouro = "Logradouro é obrigatório.";
+    if (!endereco.numero) newErrors.numero = "Número é obrigatório.";
+    if (!endereco.bairro) newErrors.bairro = "Bairro é obrigatório.";
+    if (!endereco.cidade) newErrors.cidade = "Cidade é obrigatória.";
+    if (!endereco.estado) newErrors.estado = "Estado é obrigatório.";
 
     setErrors(newErrors);
     if (Object.keys(newErrors).length === 0) setShowReview(true);
@@ -60,37 +75,37 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
       <section className="card">
         <h1 className="page-title mb-5">{client.id ? "Editar Cliente" : "Novo Cliente"}</h1>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Nome Completo" value={client.nome} onChange={(v) => { update({ nome: v }); setErrors({ ...errors, nome: "" }); }} error={errors.nome} />
-          <Field label="CPF" value={client.cpf} onChange={(v) => { update({ cpf: maskCPF(v) }); setErrors({ ...errors, cpf: "" }); }} placeholder="000.000.000-00" error={errors.cpf} />
-          <Field label="Data de Nascimento" type="date" value={client.nascimento} onChange={(v) => { update({ nascimento: v }); setErrors({ ...errors, nascimento: "" }); }} error={errors.nascimento} />
-          <Field label="Telefone" value={client.telefone} onChange={(v) => { update({ telefone: maskPhone(v) }); setErrors({ ...errors, telefone: "" }); }} placeholder="(00) 00000-0000" error={errors.telefone} />
-          <label className="block md:col-span-2"><span className="label">Observação</span><textarea className="input min-h-24" value={client.observacao} onChange={(e) => update({ observacao: e.target.value })} /></label>
+          <Field label="Nome Completo" value={client.nome || ""} onChange={(v) => { update({ nome: v }); setErrors({ ...errors, nome: "" }); }} error={errors.nome} />
+          <Field label="CPF" value={client.cpf || ""} onChange={(v) => { update({ cpf: maskCPF(v) }); setErrors({ ...errors, cpf: "" }); }} placeholder="000.000.000-00" error={errors.cpf} />
+          <Field label="Data de Nascimento" type="date" value={client.nascimento || ""} onChange={(v) => { update({ nascimento: v }); setErrors({ ...errors, nascimento: "" }); }} error={errors.nascimento} />
+          <Field label="Telefone" value={client.telefone || ""} onChange={(v) => { update({ telefone: maskPhone(v) }); setErrors({ ...errors, telefone: "" }); }} placeholder="(00) 00000-0000" error={errors.telefone} />
+          <label className="block md:col-span-2"><span className="label">Observação</span><textarea className="input min-h-24" value={client.observacao || ""} onChange={(e) => update({ observacao: e.target.value })} /></label>
         </div>
       </section>
       <section className="card">
         <h2 className="section-title mb-4">Endereço</h2>
         <div className="grid gap-4 md:grid-cols-6">
-          <Field label="CEP" value={client.endereco.cep} onChange={(v) => { updateAddress("cep", maskCEP(v)); setErrors({ ...errors, cep: "" }); }} className="md:col-span-1" error={errors.cep} />
-          <Field label="Logradouro" value={client.endereco.logradouro} onChange={(v) => { updateAddress("logradouro", v); setErrors({ ...errors, logradouro: "" }); }} className="md:col-span-3" error={errors.logradouro} />
-          <Field label="Número" value={client.endereco.numero} onChange={(v) => { updateAddress("numero", v); setErrors({ ...errors, numero: "" }); }} className="md:col-span-2" error={errors.numero} />
-          <Field label="Complemento" value={client.endereco.complemento} onChange={(v) => updateAddress("complemento", v)} className="md:col-span-2" />
-          <Field label="Bairro" value={client.endereco.bairro} onChange={(v) => { updateAddress("bairro", v); setErrors({ ...errors, bairro: "" }); }} className="md:col-span-2" error={errors.bairro} />
-          <Field label="Cidade" value={client.endereco.cidade} onChange={(v) => { updateAddress("cidade", v); setErrors({ ...errors, cidade: "" }); }} className="md:col-span-1" error={errors.cidade} />
-          <Field label="Estado" value={client.endereco.estado} onChange={(v) => { updateAddress("estado", v); setErrors({ ...errors, estado: "" }); }} className="md:col-span-1" error={errors.estado} />
+          <Field label="CEP" value={endereco.cep} onChange={(v) => { updateAddress("cep", maskCEP(v)); setErrors({ ...errors, cep: "" }); }} className="md:col-span-1" error={errors.cep} />
+          <Field label="Logradouro" value={endereco.logradouro} onChange={(v) => { updateAddress("logradouro", v); setErrors({ ...errors, logradouro: "" }); }} className="md:col-span-3" error={errors.logradouro} />
+          <Field label="Número" value={endereco.numero} onChange={(v) => { updateAddress("numero", v); setErrors({ ...errors, numero: "" }); }} className="md:col-span-2" error={errors.numero} />
+          <Field label="Complemento" value={endereco.complemento} onChange={(v) => updateAddress("complemento", v)} className="md:col-span-2" />
+          <Field label="Bairro" value={endereco.bairro} onChange={(v) => { updateAddress("bairro", v); setErrors({ ...errors, bairro: "" }); }} className="md:col-span-2" error={errors.bairro} />
+          <Field label="Cidade" value={endereco.cidade} onChange={(v) => { updateAddress("cidade", v); setErrors({ ...errors, cidade: "" }); }} className="md:col-span-1" error={errors.cidade} />
+          <Field label="Estado" value={endereco.estado} onChange={(v) => { updateAddress("estado", v); setErrors({ ...errors, estado: "" }); }} className="md:col-span-1" error={errors.estado} />
         </div>
       </section>
       <section className="card">
         <h2 className="section-title mb-4">Vínculos do Cliente</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          <Select label="Vínculo primário" value={client.vinculos[0] || user.vinculos[0]} disabled={!isManager} onChange={(v) => update({ vinculos: [v, ...client.vinculos.slice(1)] })} options={vinculos} />
-          {isManager && client.vinculos.length > 1 && (
+          <Select label="Vínculo primário" value={client.vinculos?.[0] || user.vinculos[0]} disabled={!isManager} onChange={(v) => update({ vinculos: [v, ...(client.vinculos || []).slice(1)] })} options={vinculos} />
+          {isManager && (client.vinculos || []).length > 1 && (
             <div className="flex items-end gap-2">
               <div className="flex-1"><Select label="Vínculo secundário" value={client.vinculos[1]} onChange={(v) => update({ vinculos: [client.vinculos[0], v] })} options={vinculos} /></div>
               <button type="button" className="mb-0.5 flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-lg border border-red-500 text-red-500 transition-colors hover:bg-red-50" onClick={() => update({ vinculos: [client.vinculos[0]] })}><Trash2 size={18} /></button>
             </div>
           )}
         </div>
-        {isManager && client.vinculos.length < 2 && <button className="mt-4 text-sm font-semibold text-primary" onClick={() => update({ vinculos: [client.vinculos[0] || vinculos[0], vinculos[1]] })}>+ Adicionar segundo vínculo</button>}
+        {isManager && (client.vinculos || []).length < 2 && <button className="mt-4 text-sm font-semibold text-primary" onClick={() => update({ vinculos: [client.vinculos?.[0] || vinculos[0], vinculos[1]] })}>+ Adicionar segundo vínculo</button>}
       </section>
       <section className="card">
         <div className="mb-4 flex items-center justify-between">
@@ -99,7 +114,7 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
         </div>
         <InsuranceCards 
             user={user} 
-            insurances={client.seguros} 
+            insurances={client.seguros || []} 
             editable 
             onRemove={async (idToRemove) => {
               // Se NÃO for um seguro novo criado agora na tela (que começa com 's'), manda pro backend deletar
@@ -112,7 +127,7 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
                 }
               }
               // Remove do front-end
-              update({ seguros: client.seguros.filter((s:any) => s.id !== idToRemove) });
+              update({ seguros: (client.seguros || []).filter((s:any) => s.id !== idToRemove) });
             }} />
       </section>
       <ActionBar>

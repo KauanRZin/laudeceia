@@ -107,6 +107,13 @@ export default function App() {
     setScreen("dashboard");
   }
 
+  // Compartilhado entre o Dashboard ("ver detalhes" na tabela de renovações)
+  // e o ClientList ("Visualizar" na lista de clientes) — mesma navegação.
+  function handleViewClient(client: Client) {
+    setSelectedClient(client);
+    setScreen("clientProfile");
+  }
+
   if (!authChecked) return <div className="flex min-h-screen items-center justify-center bg-appBg text-textSecondary">Carregando...</div>;
   if (!currentUser) return <LoginScreen onLogin={handleLogin} toast={toast} />;
 
@@ -117,14 +124,14 @@ export default function App() {
       
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         {screen === "dashboard" && (
-          <Dashboard user={currentUser} clients={visibleClients} loading={clientsLoading} rangeStart={rangeStart} rangeEnd={rangeEnd} onRangeStartChange={setRangeStart} onRangeEndChange={setRangeEnd} onRenew={setRenewingRow} />
+          <Dashboard user={currentUser} clients={visibleClients} loading={clientsLoading} rangeStart={rangeStart} rangeEnd={rangeEnd} onRangeStartChange={setRangeStart} onRangeEndChange={setRangeEnd} onRenew={setRenewingRow} onViewClient={handleViewClient} />
         )}
         
         {screen === "clients" && (
           <ClientList user={currentUser} clients={visibleClients} vinculos={vinculoNomes} loading={clientsLoading} 
             onNew={() => { setEditingClient(makeBlankClient(currentUser.vinculos[0] || vinculoNomes[0])); setScreen("clientForm"); }}
             onEdit={(client: Client) => { setEditingClient(structuredClone(client)); setScreen("clientForm"); }}
-            onView={(client: Client) => { setSelectedClient(client); setScreen("clientProfile"); }}
+            onView={handleViewClient}
             onDelete={removeClient}
             onImport={handleImport}
           />

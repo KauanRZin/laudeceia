@@ -34,7 +34,9 @@ export function ClientList({
   const [currentPage, setCurrentPage] = useState(1);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc" | null>(null);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
-  
+
+  const isManager = user.role === "Manager" || user.role === "SuperAdmin";
+
   const itemsPerPage = 15;
 
   const filtered = clients.filter((client: Client) => {
@@ -64,7 +66,11 @@ export function ClientList({
             onImport={onImport} 
             vinculoPadrao={user.vinculos[0] || vinculos[0]} 
           />
-          <button className="btn-outline"><Download size={16} /> Exportar Dados</button>
+          {isManager && (
+            <button className="btn-outline">
+              <Download size={16} /> Exportar Dados
+            </button>
+          )}
           <button className="btn-primary" onClick={onNew}><Plus size={16} /> Novo Cliente</button>
         </div>
       </div>
