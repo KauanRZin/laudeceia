@@ -63,5 +63,6 @@ router.post("/:id/insurances", validate(createInsuranceSchema), asyncHandler(con
  */
 router.patch("/:id/insurances/:insuranceId", validate(updateInsuranceSchema), asyncHandler(controller.updateInsurance));
 router.delete("/:id/insurances/:insuranceId", asyncHandler(controller.removeInsurance));
+router.post("/import", asyncHandler(controller.importSpreadsheet));
 
 module.exports = router;

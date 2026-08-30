@@ -1,6 +1,7 @@
 const prisma = require("../../database/client");
 const AppError = require("../../utils/AppError");
 const { serializeClient, serializeInsurance } = require("../../utils/serializers");
+const { importSpreadsheet } = require("./clients.import.service");
 
 const clientInclude = {
   vinculos: true,
@@ -221,4 +222,5 @@ module.exports = {
   addInsurance,
   updateInsurance,
   removeInsurance,
+  importSpreadsheet
 };

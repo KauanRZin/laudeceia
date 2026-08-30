@@ -29,3 +29,8 @@ export async function removeInsurance(clientId: string, insuranceId: string) {
   const { data } = await api.delete(`/clients/${clientId}/insurances/${insuranceId}`);
   return data;
 }
+export async function importClientsSpreadsheet(payload: any) {
+  // Ajuste a rota "/clients/import" para bater com o que você configurou no backend
+  const { data } = await api.post("/clients/import", payload); 
+  return data;
+}
