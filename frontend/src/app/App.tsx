@@ -15,6 +15,8 @@ import { Navbar } from "./components/Navbar";
 import { LoginScreen } from "./screens/LoginScreen";
 import { Dashboard } from "./screens/Dashboard";
 import { ClientList } from "./screens/ClientList";
+import { ClientPeriodSearch } from "./screens/ClientPeriodSearch";
+import { AuditLogScreen } from "./screens/AuditLogScreen";
 import { ClientForm } from "./screens/ClientForm";
 import { ClientProfile } from "./screens/ClientProfile";
 import { UserManagement, UserForm } from "./screens/UserManagement";
@@ -142,6 +144,14 @@ export default function App() {
             onImport={handleImport}
           />
         )}
+
+        {screen === "clientPeriodSearch" && (
+          <ClientPeriodSearch user={currentUser} vinculos={vinculoNomes} insuranceTypes={insuranceTypes}
+            onView={async id => handleViewClient(await clientsApi.getClient(id))}
+          />
+        )}
+
+        {screen === "auditLogs" && currentUser.role === "SuperAdmin" && <AuditLogScreen />}
         
         {screen === "clientForm" && editingClient && (
           <ClientForm user={currentUser} client={editingClient} vinculos={vinculoNomes} setClient={setEditingClient} onCancel={() => setScreen("clients")} onAddInsurance={() => setInsuranceModal(true)}

@@ -71,4 +71,26 @@ model Insurance {
   vinculo        Vinculo       @relation(fields: [vinculoId], references: [id])
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([clientId, tipoId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  actorId    String?
+  actorName  String
+  clientId   String?
+  clientName String?
+  entityId   String?
+  summary    String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt, id])
+  @@index([clientId, createdAt])
+  @@index([action, createdAt])
 }

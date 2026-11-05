@@ -4,6 +4,10 @@ async function list(req, res) {
   res.json(await service.list(req.user));
 }
 
+async function findByInsuranceActivity(req, res) {
+  res.set("Cache-Control", "no-store").json(await service.findByInsuranceActivity(req.user, req.validated.query));
+}
+
 async function exportClients(req, res) {
   const linhas = await service.findClientsForExport(req.validated.query);
   res.set("Cache-Control", "no-store").json(linhas);
@@ -44,6 +48,7 @@ async function importSpreadsheet(req, res) {
 
 module.exports = {
   list,
+  findByInsuranceActivity,
   exportClients,
   getById,
   create,

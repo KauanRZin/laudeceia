@@ -55,6 +55,7 @@ function serializeInsurance(insurance) {
 
 function formatImportObservation(value) {
   return String(value ?? "")
+    .replace(/\r\n?/g, "\n")
     .replace(/ \| (?=Importação:|Seguro Auto - (?:Modelo:|Placa:))/g, "\n\n")
     .replace(/^Importação: ([^\n]+)$/gm, (_match, content) =>
       `Importação\n${content.split(/(?<=\.)\s+/).map(item => `- ${item}`).join("\n")}`

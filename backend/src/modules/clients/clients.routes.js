@@ -8,6 +8,7 @@ const {
   createClientSchema,
   updateClientSchema,
   clientIdSchema,
+  clientActivitySchema,
   exportClientsSchema,
   createInsuranceSchema,
   updateInsuranceSchema,
@@ -33,6 +34,7 @@ router.use(auth);
 router.get("/", asyncHandler(controller.list));
 router.post("/", validate(createClientSchema), asyncHandler(controller.create));
 router.get("/export", managerOnly, validate(exportClientsSchema), asyncHandler(controller.exportClients));
+router.get("/activity", validate(clientActivitySchema), asyncHandler(controller.findByInsuranceActivity));
 
 /**
  * @openapi

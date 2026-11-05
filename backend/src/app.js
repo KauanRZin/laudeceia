@@ -9,6 +9,7 @@ const clientsRoutes = require("./modules/clients/clients.routes");
 const usersRoutes = require("./modules/users/users.routes");
 const vinculosRoutes = require("./modules/vinculos/vinculos.routes");
 const insuranceTypesRoutes = require("./modules/insuranceTypes/insuranceTypes.routes");
+const auditRoutes = require("./modules/audit/audit.routes");
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/clients", clientsRoutes);
 app.use("/users", usersRoutes);
 app.use("/vinculos", vinculosRoutes);
 app.use("/insurance-types", insuranceTypesRoutes);
+app.use("/audit-logs", auditRoutes);
 
 app.use((_req, _res, next) => {
   const AppError = require("./utils/AppError");

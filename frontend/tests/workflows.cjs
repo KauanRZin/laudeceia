@@ -9,7 +9,7 @@ const XLSX = require("xlsx");
 function load(relativePath, dependencies, extra = "") {
   const source = fs.readFileSync(path.join(__dirname, "../src/app", relativePath), "utf8");
   const code = ts.transpileModule(source + extra, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports = {};
   vm.runInNewContext(code, { exports, require: name => dependencies[name] || {} });
@@ -89,4 +89,70 @@ test("dashboard ordena a lista completa antes de paginar", () => {
   assert.equal(names(tree)[0], "Beatriz");
   tree = click(tree, "Dias restantes");
   assert.equal(names(tree)[0], "Eva");
+});
+
+test("log compara campos alterados de cliente e mostra dados antigos da entidade excluída", () => {
+  const { getAuditDetails } = load("screens/AuditLogScreen.tsx", {
+    "../utils/format": { formatDate: value => value },
+  });
+  const normalize = value => JSON.parse(JSON.stringify(value));
+  const changed = getAuditDetails({
+    action: "CLIENT_UPDATED",
+    before: { nome: "Ana", telefone: "11111111", endereco: { cidade: "Recife" } },
+    after: { nome: "Ana", telefone: "22222222", endereco: { cidade: "Recife" } },
+  });
+  assert.deepEqual(normalize(changed), [{ path: "telefone", label: "Telefone", before: "11111111", after: "22222222" }]);
+  const deletedClient = getAuditDetails({ action: "CLIENT_DELETED", before: { nome: "Ana", cpf: "00123456789" }, after: null });
+  assert.equal(deletedClient.find(row => row.path === "cpf").before, "00123456789");
+  assert.equal(deletedClient.some(row => row.path === "tipo.nome"), false);
+  const deletedPolicy = getAuditDetails({ action: "INSURANCE_DELETED", before: { tipo: { nome: "Seguro Vida" }, inicioVigencia: "2026-01-01", fimVigencia: null }, after: null });
+  assert.equal(deletedPolicy.find(row => row.path === "tipo.nome").before, "Seguro Vida");
+  assert.equal(deletedPolicy.find(row => row.path === "fimVigencia").before, "Sem vencimento");
+  assert.equal(getAuditDetails({ action: "IMPORT_COMPLETED", before: null, after: { nome: "Dados de um log antigo" } }).length, 0);
+});
+
+test("placa é extraída diretamente da observação em formatos antigos e com quebras do Windows", () => {
+  const { latestVehiclePlate } = load("utils/format.ts", {});
+  const cases = [
+    [null, null],
+    ["Placa: ausente", null],
+    ["Observação livre", null],
+    ["Placa: ABC-1234", "ABC1234"],
+    ["Modelo: Azul - placa do veículo: abc1d23", "ABC1D23"],
+    ["Seguro Auto\r\nModelo: Carro azul\r\nPlaca: SOP7I82", "SOP7I82"],
+    ["Importação: CPF genérico utilizado. | Seguro Auto - Modelo: Azul - Placa: SOP7I82 | Seguro Auto - Modelo: Branco - Placa: SNL0H16", "SNL0H16"],
+    ["Seguro Auto\nModelo: Azul\nPlaca: SOP7I82\n\nSeguro anterior — Seguro Auto\nPlaca: ANT0000", "SOP7I82"],
+    ["Seguro anterior — Seguro Auto\nPlaca: ANT0000", "ANT0000"],
+    ["Seguro Auto\nPlaca: SOP7I82\n\nSeguro Auto\nModelo: Sem placa informada", "SOP7I82"],
+  ];
+  for (const [value, expected] of cases) assert.equal(latestVehiclePlate(value), expected, String(value));
+});
+
+test("tela por período mostra a placa da observação mesmo sem campo adicional na resposta", () => {
+  const format = load("utils/format.ts", {});
+  let stateIndex = 0;
+  const result = { items: [{
+    id: "client", nome: "Pessoa Teste", cpf: "123.456.789-00",
+    observacao: "Seguro Auto\r\nModelo: Carro azul\r\nPlaca: SOP7I82", seguros: [],
+  }], total: 1, page: 1, pageSize: 20 };
+  const jsx = (type, props) => ({ type, props });
+  const { ClientPeriodSearch } = load("screens/ClientPeriodSearch.tsx", {
+    react: { useEffect() {}, useState: initial => {
+      const index = stateIndex++;
+      return [index === 5 ? { inicio: "2026-01-01", fim: "2026-12-31" } : index === 6 ? result : initial, () => {}];
+    } },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "../utils/format": format,
+  });
+  const tree = ClientPeriodSearch({ user: { role: "SuperAdmin" }, vinculos: [], insuranceTypes: [], onView: async () => {} });
+  const cells = [];
+  function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== "object") return;
+    if (node.type === "td") cells.push(node.props.children);
+    walk(node.props?.children);
+  }
+  walk(tree);
+  assert.ok(cells.includes("SOP7I82"));
+  assert.ok(cells.includes("123.456.789-00"));
 });

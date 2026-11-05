@@ -4,6 +4,8 @@ export type Screen =
   | "login"
   | "dashboard"
   | "clients"
+  | "clientPeriodSearch"
+  | "auditLogs"
   | "clientForm"
   | "clientProfile"
   | "users"

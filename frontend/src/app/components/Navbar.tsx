@@ -19,6 +19,8 @@ export function Navbar({ user, screen, setScreen, logout }: { user: User; screen
         <nav className="hidden items-center gap-2 md:flex">
           <NavButton active={screen === "dashboard"} onClick={() => setScreen("dashboard")}>Dashboard</NavButton>
           <NavButton active={screen === "clients"} onClick={() => setScreen("clients")}>Clientes</NavButton>
+          <NavButton active={screen === "clientPeriodSearch"} onClick={() => setScreen("clientPeriodSearch")}>Por período</NavButton>
+          {user.role === "SuperAdmin" && <NavButton active={screen === "auditLogs"} onClick={() => setScreen("auditLogs")}>Histórico</NavButton>}
           {isStaff && <NavButton active={screen === "users"} onClick={() => setScreen("users")}>Usuários</NavButton>}
         </nav>
         <div className="relative flex items-center gap-3">
@@ -31,6 +33,8 @@ export function Navbar({ user, screen, setScreen, logout }: { user: User; screen
             <div className="absolute right-0 top-12 w-56 rounded-lg bg-white p-2 text-textPrimary shadow-xl">
               <button className="menu-item md:hidden" onClick={() => setScreen("dashboard")}>Dashboard</button>
               <button className="menu-item md:hidden" onClick={() => setScreen("clients")}>Clientes</button>
+              <button className="menu-item md:hidden" onClick={() => { setScreen("clientPeriodSearch"); setOpen(false); }}>Por período</button>
+              {user.role === "SuperAdmin" && <button className="menu-item md:hidden" onClick={() => { setScreen("auditLogs"); setOpen(false); }}>Histórico</button>}
               {isStaff && <button className="menu-item md:hidden" onClick={() => setScreen("users")}>Usuários</button>}
               <button className="menu-item" onClick={() => setScreen("profile")}><UserCircle size={16} /> Meu Perfil</button>
               <button className="menu-item text-danger" onClick={logout}><LogOut size={16} /> Sair</button>
