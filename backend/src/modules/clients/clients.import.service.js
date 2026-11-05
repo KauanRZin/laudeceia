@@ -1,5 +1,6 @@
 const prisma = require("../../database/client");
 const AppError = require("../../utils/AppError");
+const { formatImportObservation } = require("../../utils/serializers");
 const {
   TIPO_DOCUMENTO,
   INSURANCE_TYPE_NOME_POR_TIPO_DOCUMENTO,
@@ -52,7 +53,7 @@ function parseDataBr(valor) {
   if (ano < 100) ano += 2000;
 
   const data = new Date(Date.UTC(ano, mes - 1, dia));
-  return Number.isNaN(data.getTime()) ? null : data;
+  return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia ? data : null;
 }
 
 function subtrairAnos(data, anos) {
@@ -92,7 +93,7 @@ function determinarVinculo(tipoDocumento, agenciaBruta) {
   if (tipoDocumento === TIPO_DOCUMENTO.VIDA) {
     return {
       vinculoNome: VINCULO_SEM_AGENCIA,
-      alteracao: "VIDA sem agência; revisar vínculo.",
+      alteracao: null,
     };
   }
 
@@ -122,28 +123,45 @@ function chaveIdentificacao(tipoDocumento, segurado) {
   return nome ? `nome:${nome}` : null;
 }
 
+async function buscarClientesPorNome(db, nome) {
+  if (vazio(nome)) return [];
+  const ids = await db.$queryRaw`
+    SELECT "id" FROM "Client"
+    WHERE btrim(regexp_replace(
+      lower(regexp_replace(normalize("nome", NFD), ${"[\u0300-\u036f]"}, '', 'g')),
+      '[[:space:]]+', ' ', 'g'
+    )) = ${chaveNome(nome)}
+  `;
+  return db.client.findMany({ where: { id: { in: ids.map(cliente => cliente.id) } }, include: { vinculos: true } });
+}
+
 async function buscarClienteExistente(db, tipoDocumento, segurado) {
   if (tipoDocumento === TIPO_DOCUMENTO.VIDA) {
     const cpf = somenteDigitos(segurado.cpf);
     if (!cpf) return null;
-    return db.client.findFirst({
+    if (cpf.length !== 11) throw new AppError(`CPF inválido: "${segurado.cpf}"`, 400, "INVALID_CPF");
+    const peloCpf = await db.client.findFirst({
       where: { cpf: { in: [cpf, formatarCpf(cpf)] } },
       include: { vinculos: true },
     });
+    if (peloCpf) return peloCpf;
+
+    const candidatos = await buscarClientesPorNome(db, segurado.segurado);
+    const mesmoNome = candidatos.filter(cliente =>
+      somenteDigitos(cliente.cpf).startsWith(DADOS_GENERICO.cpf)
+      && cliente.observacao.includes("CPF genérico utilizado.")
+    );
+    if (mesmoNome.length > 1) {
+      throw new AppError("Mais de um cliente com CPF genérico tem esse nome. Revise os cadastros antes de importar Vida.", 409, "AMBIGUOUS_CLIENT");
+    }
+    return mesmoNome[0] || null;
   }
 
-  const nomeBruto = segurado.segurado;
-  if (vazio(nomeBruto)) return null;
-
-  // Pré-filtro "contains" (case-insensitive) pra não varrer a tabela toda,
-  // e depois comparação exata normalizada (sem acento) em memória.
-  const candidatos = await db.client.findMany({
-    where: { nome: { contains: String(nomeBruto).trim(), mode: "insensitive" } },
-    include: { vinculos: true },
-  });
-
-  const chave = chaveNome(nomeBruto);
-  return candidatos.find(cliente => chaveNome(cliente.nome) === chave) || null;
+  const candidatos = await buscarClientesPorNome(db, segurado.segurado);
+  if (candidatos.length > 1) {
+    throw new AppError("Mais de um cliente tem esse nome. Revise os cadastros antes de importar.", 409, "AMBIGUOUS_CLIENT");
+  }
+  return candidatos[0] || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +214,8 @@ function montarAtualizacaoCliente(segurado, clienteAtual, tipoDocumento) {
   // AUTO/RE não trazem CPF na planilha -> nunca mexe no CPF existente.
   // VIDA identifica pelo próprio CPF, então o nome pode ser corrigido se vier diferente.
   if (tipoDocumento === TIPO_DOCUMENTO.VIDA) {
+    const cpf = somenteDigitos(segurado.cpf);
+    if (somenteDigitos(clienteAtual.cpf) !== cpf) dados.cpf = formatarCpf(cpf);
     const novoNome = vazio(segurado.segurado) ? null : String(segurado.segurado).trim();
     if (novoNome && chaveNome(novoNome) !== chaveNome(clienteAtual.nome)) {
       dados.nome = novoNome;
@@ -229,20 +249,49 @@ function calcularVigencia(tipoDocumento, fimVigBruto) {
 // ---------------------------------------------------------------------------
 
 async function manterTresSegurosRecentes(db, clientId, tipoId) {
-  const seguros = await db.insurance.findMany({ where: { clientId, tipoId } });
+  await db.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clientId} FOR NO KEY UPDATE`;
+  const seguros = await db.insurance.findMany({
+    where: { clientId, tipoId },
+    include: { tipo: true, vinculo: true },
+  });
   // AUTO/RE usam o fim da vigência; VIDA usa a data de renovação (início).
   seguros.sort((a, b) =>
     new Date(b.fimVigencia ?? b.inicioVigencia) - new Date(a.fimVigencia ?? a.inicioVigencia)
     || new Date(b.createdAt) - new Date(a.createdAt)
     || a.id.localeCompare(b.id)
   );
-  const excedentes = seguros.slice(3).map(seguro => seguro.id);
+  const excedentes = seguros.slice(3);
   if (excedentes.length) {
-    await db.insurance.deleteMany({ where: { clientId, tipoId, id: { in: excedentes } } });
+    await arquivarSegurosExcedentes(db, clientId, excedentes);
+    await db.insurance.deleteMany({ where: { clientId, tipoId, id: { in: excedentes.map(seguro => seguro.id) } } });
+  }
+}
+
+async function arquivarSegurosExcedentes(db, clientId, seguros) {
+  const formatarData = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+  for (const seguro of seguros) {
+    const inicio = formatarData.format(seguro.inicioVigencia);
+    const periodo = seguro.fimVigencia
+      ? `Vigência: ${inicio} a ${formatarData.format(seguro.fimVigencia)}`
+      : `Renovação: ${inicio} — sem vencimento`;
+    const historico = [
+      `Seguro anterior — ${seguro.tipo.nome}`,
+      periodo,
+      `Vínculo: ${seguro.vinculo.nome}`,
+    ].join("\n");
+
+    await db.$executeRaw`
+      UPDATE "Client"
+      SET "observacao" = CASE WHEN "observacao" = '' THEN ${historico}
+        ELSE "observacao" || E'\\n\\n' || ${historico} END,
+        "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "id" = ${clientId} AND strpos("observacao", ${historico}) = 0
+    `;
   }
 }
 
 async function upsertInsurance(db, { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia }) {
+  await db.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clientId} FOR NO KEY UPDATE`;
   // Reimportar o mesmo período atualiza seu vínculo, sem criar duplicata.
   const existente = await db.insurance.findFirst({
     where: { clientId, tipoId, inicioVigencia, fimVigencia },
@@ -287,21 +336,22 @@ function avaliarVinculoDoCliente(clienteAtual, vinculo) {
 // ---------------------------------------------------------------------------
 
 function montarObservacao(alteracoes, observacaoAnterior) {
-  if (!alteracoes.length) return observacaoAnterior;
-
-  const texto = `Importação: ${alteracoes.join(" ")}`;
-
-  return observacaoAnterior ? `${observacaoAnterior} | ${texto}` : texto;
+  const observacao = formatImportObservation(observacaoAnterior);
+  const novas = [...new Set(alteracoes)].filter(item => !observacao.split("\n").includes(`- ${item}`));
+  if (!novas.length) return observacao;
+  const texto = `Importação\n${novas.map(item => `- ${item}`).join("\n")}`;
+  return observacao ? `${observacao}\n\n${texto}` : texto;
 }
 
 function adicionarPlacaObservacao(tipoDocumento, placaBruta, observacaoAnterior = "", modeloBruto) {
-  if (tipoDocumento !== TIPO_DOCUMENTO.AUTO) return observacaoAnterior;
+  const observacao = formatImportObservation(observacaoAnterior);
+  if (tipoDocumento !== TIPO_DOCUMENTO.AUTO) return observacao;
   const placa = String(placaBruta ?? "").trim().toUpperCase().replace(/[-\s]/g, "");
   const modelo = String(modeloBruto ?? "").trim().replace(/\s+/g, " ");
-  if (!placa && !modelo) return observacaoAnterior;
-  const registro = ["Seguro Auto", modelo && `Modelo: ${modelo}`, placa && `Placa: ${placa}`].filter(Boolean).join(" - ");
-  if (observacaoAnterior.split(" | ").includes(registro)) return observacaoAnterior;
-  return observacaoAnterior ? `${observacaoAnterior} | ${registro}` : registro;
+  if (!placa && !modelo) return observacao;
+  const registro = ["Seguro Auto", modelo && `Modelo: ${modelo}`, placa && `Placa: ${placa}`].filter(Boolean).join("\n");
+  if (observacao.split("\n\n").includes(registro)) return observacao;
+  return observacao ? `${observacao}\n\n${registro}` : registro;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,34 +379,27 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
       throw new AppError(`Vínculo "${vinculoNome}" não está cadastrado.`, 500, "VINCULO_NOT_FOUND");
     }
 
-    // Já processado nesta mesma importação (duas linhas = mesma pessoa)?
     const clientIdJaProcessado = processadosNaImportacao.get(chave);
-
-    if (clientIdJaProcessado) {
-      const clienteAtual = await tx.client.findUnique({
+    let clienteExistente = clientIdJaProcessado
+      ? await tx.client.findUnique({
         where: { id: clientIdJaProcessado },
         include: { vinculos: true },
-      });
-      const { conectar } = avaliarVinculoDoCliente(clienteAtual, vinculo);
-      const observacao = adicionarPlacaObservacao(tipoDocumento, segurado.placa, clienteAtual.observacao, segurado.modelo);
-
-      if (conectar || observacao !== clienteAtual.observacao) {
-        await tx.client.update({
-          where: { id: clientIdJaProcessado },
-          data: { observacao, ...(conectar && { vinculos: { connect: { id: vinculo.id } } }) },
-        });
-      }
-
-      await upsertInsurance(tx, { clientId: clientIdJaProcessado, tipoId: insuranceTypeId, vinculoId: vinculo.id, inicioVigencia, fimVigencia });
-
-      return { status: "atualizado", clientId: clientIdJaProcessado, comDadosGenericos: false };
-    }
-
-    const clienteExistente = await buscarClienteExistente(tx, tipoDocumento, segurado);
+      })
+      : await buscarClienteExistente(tx, tipoDocumento, segurado);
 
     if (clienteExistente) {
+      await tx.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clienteExistente.id} FOR NO KEY UPDATE`;
+      clienteExistente = await tx.client.findUnique({ where: { id: clienteExistente.id }, include: { vinculos: true } });
+      if (tipoDocumento === TIPO_DOCUMENTO.VIDA
+        && somenteDigitos(clienteExistente.cpf) !== somenteDigitos(segurado.cpf)
+        && !clienteExistente.observacao.includes("CPF genérico utilizado.")) {
+        throw new AppError("O CPF do cliente foi alterado por outra importação. Revise o cadastro.", 409, "CLIENT_CPF_CHANGED");
+      }
       const dados = montarAtualizacaoCliente(segurado, clienteExistente, tipoDocumento);
-      const observacao = adicionarPlacaObservacao(tipoDocumento, segurado.placa, clienteExistente.observacao, segurado.modelo);
+      let observacao = adicionarPlacaObservacao(tipoDocumento, segurado.placa, clienteExistente.observacao, segurado.modelo);
+      if (dados.cpf) {
+        observacao = observacao.replace(/^- CPF genérico utilizado\.$/gm, "- CPF atualizado pela planilha de Vida.");
+      }
       if (observacao !== clienteExistente.observacao) dados.observacao = observacao;
       const { conectar, alteracao: alteracaoVinculoCliente } = avaliarVinculoDoCliente(clienteExistente, vinculo);
 
