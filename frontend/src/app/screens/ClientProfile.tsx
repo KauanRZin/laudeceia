@@ -25,7 +25,7 @@ export function ClientProfile({ user, client, onBack, onEdit }: { user: User; cl
         <div className="card">
           <h2 className="section-title mb-4">Dados Pessoais</h2>
           <Detail label="Endereço" value={`${client.endereco.logradouro}, ${client.endereco.numero}, ${client.endereco.complemento || "sem complemento"}, ${client.endereco.bairro}, ${client.endereco.cidade} - ${client.endereco.estado}`} />
-          <Detail label="Observações" value={client.observacao || "Sem observações"} />
+          <div className="whitespace-pre-line"><Detail label="Observações" value={client.observacao || "Sem observações"} /></div>
         </div>
         <div className="card">
           <h2 className="section-title mb-4">Seguros Vinculados</h2>

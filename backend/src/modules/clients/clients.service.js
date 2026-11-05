@@ -1,6 +1,6 @@
 const prisma = require("../../database/client");
 const AppError = require("../../utils/AppError");
-const { serializeClient, serializeInsurance } = require("../../utils/serializers");
+const { serializeClient, serializeInsurance, formatImportObservation } = require("../../utils/serializers");
 const { importSpreadsheet, adicionarPlacaObservacao, manterTresSegurosRecentes } = require("./clients.import.service");
 
 const clientInclude = {
@@ -59,8 +59,8 @@ async function vinculoConnectByNames(names) {
   return vinculos.map((vinculo) => ({ id: vinculo.id }));
 }
 
-async function ensureClientAccess(user, id) {
-  const client = await prisma.client.findUnique({ where: { id }, include: clientInclude });
+async function ensureClientAccess(user, id, db = prisma) {
+  const client = await db.client.findUnique({ where: { id }, include: clientInclude });
   if (!client) throw new AppError("Cliente não encontrado", 404, "CLIENT_NOT_FOUND");
   if (!canSeeClient(user, client)) {
     throw new AppError("Você não tem permissão para acessar este cliente", 403, "FORBIDDEN_CLIENT");
@@ -81,6 +81,7 @@ async function list(user) {
 function serializeExportClient(client) {
   return {
     ...client,
+    ...(client.observacao !== undefined && { observacao: formatImportObservation(client.observacao) }),
     ...(client.nascimento && { nascimento: client.nascimento.toISOString().slice(0, 10) }),
   };
 }
@@ -215,6 +216,7 @@ async function addInsurance(user, clientId, data) {
   const client = await ensureClientAccess(user, clientId);
   const tipo = await validateInsuranceInput(user, client, data);
   return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clientId} FOR NO KEY UPDATE`;
     const atual = await tx.client.findUnique({ where: { id: clientId } });
     const tipoDocumento = /\bauto\b/i.test(tipo.nome) ? "AUTO" : null;
     const observacao = adicionarPlacaObservacao(tipoDocumento, data.placa, atual.observacao, data.modelo);
@@ -263,14 +265,20 @@ async function updateInsurance(user, clientId, insuranceId, data) {
 }
 
 async function removeInsurance(user, clientId, insuranceId) {
-  await ensureClientAccess(user, clientId);
-  const current = await prisma.insurance.findFirst({ where: { id: insuranceId, clientId } });
-  if (!current) throw new AppError("Seguro não encontrado", 404, "INSURANCE_NOT_FOUND");
-  if (user.role === "EMPLOYEE" && !userVinculoIds(user).includes(current.vinculoId)) {
-    throw new AppError("Funcionário só pode remover seguro do próprio vínculo", 403, "FORBIDDEN_INSURANCE_VINCULO");
-  }
-  await prisma.insurance.delete({ where: { id: insuranceId } });
-  return { success: true };
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clientId} FOR NO KEY UPDATE`;
+    await ensureClientAccess(user, clientId, tx);
+    const current = await tx.insurance.findFirst({
+      where: { id: insuranceId, clientId },
+    });
+    if (!current) throw new AppError("Seguro não encontrado", 404, "INSURANCE_NOT_FOUND");
+    if (user.role === "EMPLOYEE" && !userVinculoIds(user).includes(current.vinculoId)) {
+      throw new AppError("Funcionário só pode remover seguro do próprio vínculo", 403, "FORBIDDEN_INSURANCE_VINCULO");
+    }
+    await tx.insurance.delete({ where: { id: insuranceId } });
+    const client = await tx.client.findUnique({ where: { id: clientId }, include: clientInclude });
+    return { success: true, client: serializeClient(client) };
+  });
 }
 
 module.exports = {

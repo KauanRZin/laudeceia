@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Save, Plus, Trash2 } from "lucide-react";
 import { buscarDadosCep } from "../api/buscacep";
 import { maskCPF, maskPhone, maskCEP } from "../utils/format";
@@ -7,11 +7,15 @@ import { Field, Select, ActionBar, Breadcrumb } from "../components/SharedUI";
 import { InsuranceCards } from "../components/InsuranceCards";
 import { ClientReviewModal } from "../modals/ClientReviewModal";
 import * as clientsApi from "../api/clientsApi"; 
+import { normalizeApiError } from "../api/http";
 
-export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave, onAddInsurance }: any) {
+export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave, onAddInsurance, onInsuranceRemoved }: any) {
   const isManager = user.role === "Manager" || user.role === "SuperAdmin";
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showReview, setShowReview] = useState(false);
+  const [removendoSeguro, setRemovendoSeguro] = useState(false);
+  const [erroSeguro, setErroSeguro] = useState("");
+  const remocaoEmAndamento = useRef(false);
 
   // Alguns clientes (ex: importados via planilha) podem chegar com o objeto
   // endereco incompleto ou até ausente. Isso garante que o resto do
@@ -69,6 +73,31 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
     }
   }
 
+  async function removerSeguro(id: string) {
+    if (remocaoEmAndamento.current) return;
+    setErroSeguro("");
+    if (id.startsWith("s") || !client.id) {
+      setClient((curr: Client) => ({ ...curr, seguros: curr.seguros.filter(seguro => seguro.id !== id) }));
+      return;
+    }
+
+    remocaoEmAndamento.current = true;
+    setRemovendoSeguro(true);
+    try {
+      const resultado = await clientsApi.removeInsurance(client.id, id);
+      setClient((curr: Client) => ({
+        ...curr,
+        seguros: curr.seguros.filter(seguro => seguro.id !== id),
+      }));
+      onInsuranceRemoved?.(resultado.client);
+    } catch (error) {
+      setErroSeguro(normalizeApiError(error).message);
+    } finally {
+      remocaoEmAndamento.current = false;
+      setRemovendoSeguro(false);
+    }
+  }
+
   return (
     <div className="space-y-5 pb-24 md:pb-0">
       <Breadcrumb items={["Clientes", client.nome || "Novo Cliente", client.id ? "Editar" : "Novo"]} onBack={onCancel} />
@@ -116,23 +145,12 @@ export function ClientForm({ user, client, vinculos, setClient, onCancel, onSave
             user={user} 
             insurances={client.seguros || []} 
             editable 
-            onRemove={async (idToRemove) => {
-              // Se NÃO for um seguro novo criado agora na tela (que começa com 's'), manda pro backend deletar
-              if (!String(idToRemove).startsWith("s") && client.id) {
-                try {
-                  await clientsApi.removeInsurance(client.id, idToRemove);
-                } catch (e) {
-                  console.error("Erro ao remover seguro no backend", e);
-                  return; // Para aqui e não remove da tela se a API falhar
-                }
-              }
-              // Remove do front-end
-              update({ seguros: (client.seguros || []).filter((s:any) => s.id !== idToRemove) });
-            }} />
+            onRemove={removerSeguro} />
+        {erroSeguro && <p role="alert" className="mt-3 text-sm text-red-600">{erroSeguro}</p>}
       </section>
       <ActionBar>
         <button className="btn-outline" onClick={onCancel}>Cancelar</button>
-        <button className="btn-primary" onClick={handleRequestSave}><Save size={16} /> Salvar Cliente</button>
+        <button className="btn-primary" disabled={removendoSeguro} onClick={handleRequestSave}><Save size={16} /> Salvar Cliente</button>
       </ActionBar>
 
       <ClientReviewModal isOpen={showReview} client={client} onConfirm={confirmSave} onCancel={() => setShowReview(false)} />

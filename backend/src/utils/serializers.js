@@ -53,6 +53,17 @@ function serializeInsurance(insurance) {
   };
 }
 
+function formatImportObservation(value) {
+  return String(value ?? "")
+    .replace(/ \| (?=Importação:|Seguro Auto - (?:Modelo:|Placa:))/g, "\n\n")
+    .replace(/^Importação: ([^\n]+)$/gm, (_match, content) =>
+      `Importação\n${content.split(/(?<=\.)\s+/).map(item => `- ${item}`).join("\n")}`
+    )
+    .replace(/^Seguro Auto - ((?:Modelo:|Placa:)[^\n]+)$/gm, (_match, content) =>
+      `Seguro Auto\n${content.split(/ - (?=Modelo:|Placa:)/).join("\n")}`
+    );
+}
+
 function serializeClient(client) {
   const vinculos = (client.vinculos || []).map((vinculo) => vinculo.nome);
   return {
@@ -61,7 +72,7 @@ function serializeClient(client) {
     cpf: client.cpf,
     telefone: client.telefone,
     nascimento: toDateOnly(client.nascimento),
-    observacao: client.observacao,
+    observacao: formatImportObservation(client.observacao),
     endereco: client.endereco,
     vinculo: vinculos[0] || "",
     vinculos,
@@ -77,4 +88,5 @@ module.exports = {
   serializeUser,
   serializeClient,
   serializeInsurance,
+  formatImportObservation,
 };

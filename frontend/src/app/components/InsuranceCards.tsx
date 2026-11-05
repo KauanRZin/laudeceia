@@ -38,7 +38,9 @@ export function InsuranceCards({ user, insurances, editable, onRemove }: { user:
       <ConfirmModal
         isOpen={!!insuranceToDelete}
         title="Remover Seguro"
-        content="Tem certeza que deseja desvincular este seguro do cliente?"
+        content={insuranceToDelete?.startsWith("s")
+          ? "Deseja descartar este seguro ainda não salvo?"
+          : "Deseja remover este seguro do cliente?"}
         onConfirm={() => {
           if (insuranceToDelete && onRemove) onRemove(insuranceToDelete);
           setInsuranceToDelete(null);

@@ -145,6 +145,10 @@ export default function App() {
         
         {screen === "clientForm" && editingClient && (
           <ClientForm user={currentUser} client={editingClient} vinculos={vinculoNomes} setClient={setEditingClient} onCancel={() => setScreen("clients")} onAddInsurance={() => setInsuranceModal(true)}
+            onInsuranceRemoved={(client: Client) => {
+              setClients(prev => prev.map(item => item.id === client.id ? client : item));
+              setSelectedClient(prev => prev?.id === client.id ? client : prev);
+            }}
             onSave={async (client: Client) => { const saved = await saveClient(client); setSelectedClient(saved); setScreen("clientProfile"); }}
           />
         )}
