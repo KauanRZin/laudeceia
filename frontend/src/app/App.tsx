@@ -134,7 +134,7 @@ export default function App() {
         )}
         
         {screen === "clients" && (
-          <ClientList user={currentUser} clients={visibleClients} vinculos={vinculoNomes} loading={clientsLoading} 
+          <ClientList user={currentUser} clients={visibleClients} vinculos={vinculoNomes} insuranceTypes={insuranceTypes} loading={clientsLoading}
             onNew={() => { setEditingClient(makeBlankClient(currentUser.vinculos[0] || vinculoNomes[0])); setScreen("clientForm"); }}
             onEdit={(client: Client) => { setEditingClient(structuredClone(client)); setScreen("clientForm"); }}
             onView={handleViewClient}

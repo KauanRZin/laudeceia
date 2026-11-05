@@ -78,6 +78,57 @@ async function list(user) {
   return clients.map(serializeClient);
 }
 
+function serializeExportClient(client) {
+  return {
+    ...client,
+    ...(client.nascimento && { nascimento: client.nascimento.toISOString().slice(0, 10) }),
+  };
+}
+
+async function findClientsForExport({ modo, inicio, fim, criterio, tipoId, vinculo, campos }) {
+  const selecionarCliente = { nome: true, ...Object.fromEntries(campos.map((campo) => [campo, true])) };
+  if (modo === "clientes") {
+    const clientes = await prisma.client.findMany({
+      where: {
+        ...(vinculo && { vinculos: { some: { nome: vinculo } } }),
+      },
+      select: selecionarCliente,
+      orderBy: [{ nome: "asc" }, { id: "asc" }],
+    });
+    return clientes.map(cliente => ({ cliente: serializeExportClient(cliente) }));
+  }
+
+  const dataInicial = new Date(`${inicio}T00:00:00Z`);
+  const fimExclusivo = new Date(`${fim}T00:00:00Z`);
+  fimExclusivo.setUTCDate(fimExclusivo.getUTCDate() + 1);
+
+  const periodo = criterio === "vencimento"
+    ? { fimVigencia: { gte: dataInicial, lt: fimExclusivo } }
+    : {
+        inicioVigencia: { lt: fimExclusivo },
+        OR: [{ fimVigencia: { gte: dataInicial } }, { fimVigencia: null }],
+      };
+
+  const seguros = await prisma.insurance.findMany({
+    where: {
+      ...periodo,
+      ...(tipoId && { tipoId }),
+      ...(vinculo && { vinculo: { nome: vinculo } }),
+    },
+    include: {
+      client: { select: selecionarCliente },
+      tipo: true,
+      vinculo: true,
+    },
+    orderBy: [{ client: { nome: "asc" } }, { inicioVigencia: "asc" }, { id: "asc" }],
+  });
+
+  return seguros.map(({ client, ...seguro }) => ({
+    cliente: serializeExportClient(client),
+    seguro: serializeInsurance(seguro),
+  }));
+}
+
 async function getById(user, id) {
   return serializeClient(await ensureClientAccess(user, id));
 }
@@ -224,6 +275,7 @@ async function removeInsurance(user, clientId, insuranceId) {
 
 module.exports = {
   list,
+  findClientsForExport,
   getById,
   create,
   update,
