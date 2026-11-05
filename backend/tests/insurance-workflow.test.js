@@ -30,8 +30,10 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
   });
   const inspect = id => prisma.client.findUnique({ where: { id }, include: { vinculos: true, seguros: true } });
   const importRows = async (tipo, segurados) => {
+    const before = await prisma.auditLog.count();
     const response = await request("/clients/import", "SUPERADMIN", "POST", { documento: { tipo }, segurados });
     assert.equal(response.status, 200);
+    assert.equal(await prisma.auditLog.count(), before + 1, "Uma planilha deve produzir só um log");
     return response.json();
   };
   const name = `${prefix} João Teste`;
@@ -115,6 +117,140 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
       assert.match(formatted, /Seguro Auto\nModelo: Azul\nPlaca: ABC1D23/);
       assert.equal(formatImportObservation(formatted), formatted);
     });
+    await t.test("cliente atualizado guarda antes e depois, sem repetir salvamentos iguais", async () => {
+      const before = await inspect(clientId);
+      const telefone = "(81) 99999-1234";
+      const response = await request(`/clients/${clientId}`, "SUPERADMIN", "PATCH", { telefone });
+      assert.equal(response.status, 200);
+      await response.json();
+      const logs = await prisma.auditLog.findMany({ where: { clientId, action: "CLIENT_UPDATED" } });
+      assert.equal(logs.length, 1);
+      assert.equal(logs[0].before.telefone, before.telefone);
+      assert.equal(logs[0].after.telefone, telefone);
+      assert.equal(Object.hasOwn(logs[0].before, "seguros"), false);
+      const same = await request(`/clients/${clientId}`, "SUPERADMIN", "PATCH", { telefone });
+      assert.equal(same.status, 200);
+      await same.json();
+      assert.equal(await prisma.auditLog.count({ where: { clientId, action: "CLIENT_UPDATED" } }), 1);
+    });
+    await t.test("cadastro manual registra cliente e importação guarda só o nome da planilha", async () => {
+      const manual = await request("/clients", "SUPERADMIN", "POST", {
+        nome: `${prefix} Manual`, cpf: "555.555.555-55", telefone: "(81) 99999-1111", nascimento: "1990-01-01",
+        vinculos: [config.VINCULO_SEM_AGENCIA],
+        endereco: { cep: "55555-555", logradouro: "Rua Teste", numero: "10", bairro: "Centro", cidade: "Teste", estado: "PE" },
+      });
+      assert.equal(manual.status, 201);
+      const created = await manual.json();
+      const log = await prisma.auditLog.findFirst({ where: { entityId: created.id, action: "CLIENT_CREATED" } });
+      assert.equal(log.after.nome, `${prefix} Manual`);
+      assert.equal(log.before, null);
+      const branch = await prisma.vinculo.findUnique({ where: { nome: config.VINCULO_SEM_AGENCIA } });
+      const added = await request(`/clients/${created.id}/insurances`, "SUPERADMIN", "POST", {
+        tipoId: 3, vinculoId: branch.id, inicioVigencia: "2025-01-01", fimVigencia: "2026-01-01",
+      });
+      assert.equal(added.status, 201);
+      const insurance = await added.json();
+      const insuranceLog = await prisma.auditLog.findFirst({ where: { entityId: insurance.id, action: "INSURANCE_CREATED" } });
+      assert.equal(insuranceLog.before, null);
+      assert.equal(insuranceLog.after.tipo.nome, "Seguro Auto");
+      const deleted = await request(`/clients/${created.id}`, "SUPERADMIN", "DELETE");
+      assert.equal(deleted.status, 200);
+      await deleted.json();
+      const imports = await prisma.auditLog.findMany({ where: { action: "IMPORT_COMPLETED" } });
+      assert.ok(imports.length > 0);
+      for (const entry of imports) {
+        assert.match(entry.summary, /^Planilha de (Vida|Auto|RE) importada$/);
+        assert.equal(entry.before, null);
+        assert.equal(entry.after, null);
+        assert.equal(entry.clientId, null);
+        assert.equal(entry.entityId, null);
+      }
+    });
+    await t.test("busca por período usa criação e atualização, respeitando os vínculos", async () => {
+      const client = await inspect(clientId);
+      await prisma.client.update({ where: { id: clientId }, data: {
+        observacao: `${client.observacao}\n\nSeguro Auto\nModelo: Carro mais recente\nPlaca: XYZ9A87`,
+      } });
+      const own = client.vinculos.find(v => v.nome.includes("Surubim"));
+      const other = client.vinculos.find(v => v.id !== own.id);
+      await prisma.user.update({ where: { id: users.EMPLOYEE.id }, data: { vinculos: { connect: { id: own.id } } } });
+      const addFixture = (vinculoId, createdAt, updatedAt) => prisma.insurance.create({ data: {
+        clientId, tipoId: 3, vinculoId, inicioVigencia: new Date("2025-01-01"), fimVigencia: new Date("2026-01-01"),
+        createdAt: new Date(createdAt), updatedAt: new Date(updatedAt),
+      } });
+      const updated = await addFixture(own.id, "2020-01-01", "2026-11-01T03:00:00Z");
+      const created = await addFixture(other.id, "2026-11-02T02:59:59Z", "2026-11-03T00:00:00Z");
+      await addFixture(own.id, "2026-11-02T03:00:00Z", "2026-11-02T03:00:00Z");
+      await addFixture(own.id, "2026-11-01T02:59:59Z", "2026-11-01T02:59:59Z");
+      const url = "/clients/activity?inicio=2026-11-01&fim=2026-11-01&tipoId=3";
+      const admin = await request(url);
+      assert.equal(admin.status, 200);
+      const all = await admin.json();
+      assert.equal(all.total, 1);
+      assert.equal(all.items[0].cpf, "123.456.789-00");
+      assert.match(all.items[0].observacao, /Placa: XYZ9A87/);
+      assert.deepEqual(all.items[0].seguros.map(s => s.id).sort(), [created.id, updated.id].sort());
+      const employee = await (await request(url, "EMPLOYEE")).json();
+      assert.equal(employee.total, 1);
+      assert.match(employee.items[0].observacao, /Placa: XYZ9A87/);
+      assert.deepEqual(employee.items[0].seguros.map(s => s.id), [updated.id]);
+      const creation = await (await request(url + "&evento=criados")).json();
+      assert.deepEqual(creation.items[0].seguros.map(s => s.id), [created.id]);
+      const invalid = await request(url + "&page=0");
+      assert.equal(invalid.status, 400);
+      await invalid.json();
+    });
+    await t.test("logs protegem snapshots de exclusão e têm paginação estável", async () => {
+      const url = "/audit-logs?inicio=2000-01-01&fim=2099-12-31";
+      for (const role of [null, "MANAGER", "EMPLOYEE"]) {
+        const response = await request(url, role);
+        assert.equal(response.status, role ? 403 : 401);
+        await response.json();
+      }
+      const deleted = await (await request(url + "&action=INSURANCE_DELETED")).json();
+      assert.equal(deleted.total, 2);
+      for (const entry of deleted.items) {
+        assert.equal(entry.actorId, users.SUPERADMIN.id);
+        assert.equal(entry.clientName, name);
+        assert.equal(entry.before.id, entry.entityId);
+        assert.equal(entry.before.tipo.nome, "Seguro Auto");
+        assert.equal(await prisma.insurance.findUnique({ where: { id: entry.entityId } }), null);
+      }
+      const pageOne = await (await request(url + "&pageSize=2")).json();
+      const pageTwo = await (await request(url + "&pageSize=2&page=2")).json();
+      assert.equal(pageOne.items.length, 2);
+      assert.ok(pageTwo.items.every(row => !pageOne.items.some(other => other.id === row.id)));
+    });
+    await t.test("alteração manual de seguro guarda os valores anteriores e novos", async () => {
+      const policy = (await inspect(clientId)).seguros.find(s => s.tipoId === 3);
+      const response = await request(`/clients/${clientId}/insurances/${policy.id}`, "SUPERADMIN", "PATCH", { fimVigencia: "2028-11-10" });
+      assert.equal(response.status, 200);
+      await response.json();
+      const logs = await prisma.auditLog.findMany({ where: { entityId: policy.id, action: "INSURANCE_UPDATED" } });
+      assert.equal(logs.length, 1);
+      assert.equal(logs[0].before.fimVigencia, policy.fimVigencia.toISOString());
+      assert.equal(logs[0].after.fimVigencia, "2028-11-10T00:00:00.000Z");
+      const same = await request(`/clients/${clientId}/insurances/${policy.id}`, "SUPERADMIN", "PATCH", { fimVigencia: "2028-11-10" });
+      assert.equal(same.status, 200);
+      await same.json();
+      assert.equal(await prisma.auditLog.count({ where: { entityId: policy.id, action: "INSURANCE_UPDATED" } }), 1);
+    });
+    await t.test("falha na exclusão desfaz também a gravação do log", async () => {
+      const insurance = (await inspect(clientId)).seguros[0];
+      const before = await prisma.auditLog.count();
+      await prisma.$executeRawUnsafe("CREATE FUNCTION regression_delete_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'Synthetic test failure'; END; $$ LANGUAGE plpgsql");
+      await prisma.$executeRawUnsafe('CREATE TRIGGER regression_delete_fail BEFORE DELETE ON "Insurance" FOR EACH ROW EXECUTE FUNCTION regression_delete_fail()');
+      try {
+        const response = await request(`/clients/${clientId}/insurances/${insurance.id}`, "SUPERADMIN", "DELETE");
+        assert.equal(response.status, 500);
+        await response.json();
+        assert.equal(await prisma.auditLog.count(), before);
+        assert.ok(await prisma.insurance.findUnique({ where: { id: insurance.id } }));
+      } finally {
+        await prisma.$executeRawUnsafe('DROP TRIGGER regression_delete_fail ON "Insurance"');
+        await prisma.$executeRawUnsafe("DROP FUNCTION regression_delete_fail()");
+      }
+    });
     await t.test("backup só para administrador gera SQL restaurável", async () => {
       for (const role of [null, "MANAGER", "EMPLOYEE"]) {
         const response = await request("/users/database-backup", role);
@@ -132,6 +268,20 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
         execFileSync("psql", ["-X", "-q", "-v", "ON_ERROR_STOP=1", "-d", restoreName], { env, input: sql });
         assert.equal(execFileSync("psql", ["-X", "-At", "-d", restoreName, "-c", 'SELECT count(*) FROM "Client"'], { env, encoding: "utf8" }).trim(), "1");
       } finally { execFileSync("dropdb", [restoreName], { env }); }
+    });
+    await t.test("logs persistem depois da exclusão do cliente", async () => {
+      const before = await prisma.auditLog.count({ where: { clientId } });
+      const insuranceLogs = await prisma.auditLog.count({ where: { clientId, action: "INSURANCE_DELETED" } });
+      const response = await request(`/clients/${clientId}`, "SUPERADMIN", "DELETE");
+      assert.equal(response.status, 200);
+      await response.json();
+      assert.equal(await prisma.client.findUnique({ where: { id: clientId } }), null);
+      assert.equal(await prisma.auditLog.count({ where: { clientId } }), before + 1);
+      assert.equal(await prisma.auditLog.count({ where: { clientId, action: "INSURANCE_DELETED" } }), insuranceLogs);
+      const log = await prisma.auditLog.findFirst({ where: { clientId, action: "CLIENT_DELETED" } });
+      assert.equal(log.before.nome, name);
+      assert.equal(log.before.cpf, "123.456.789-00");
+      assert.equal(log.after, null);
     });
   } finally {
     await prisma.client.deleteMany({ where: { nome: { startsWith: prefix } } });

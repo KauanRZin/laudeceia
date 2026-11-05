@@ -27,6 +27,16 @@ const createClientSchema = z.object({ body: clientBody });
 const updateClientSchema = z.object({ params: idParams, body: clientBody.partial() });
 const clientIdSchema = z.object({ params: idParams });
 
+const clientActivitySchema = z.object({ query: z.object({
+  inicio: z.string().date("Informe uma data inicial válida"),
+  fim: z.string().date("Informe uma data final válida"),
+  evento: z.enum(["todos", "criados", "atualizados"]).default("todos"),
+  tipoId: z.coerce.number().int().positive().optional(),
+  vinculo: z.string().trim().min(1).max(200).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).refine(query => query.inicio <= query.fim, { path: ["fim"], message: "A data final deve ser posterior ou igual à inicial" }) });
+
 const exportFields = z.enum(["nascimento", "cpf", "telefone", "endereco", "observacao"]);
 const exportCommonQuery = z.object({
   vinculo: z.string().trim().min(1).max(200).optional(),
@@ -77,6 +87,7 @@ module.exports = {
   createClientSchema,
   updateClientSchema,
   clientIdSchema,
+  clientActivitySchema,
   exportClientsSchema,
   createInsuranceSchema,
   updateInsuranceSchema,

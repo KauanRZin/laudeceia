@@ -1,6 +1,7 @@
 const prisma = require("../../database/client");
 const AppError = require("../../utils/AppError");
 const { formatImportObservation } = require("../../utils/serializers");
+const { recordInsuranceEvent, recordImportSummary } = require("../audit/audit.service");
 const {
   TIPO_DOCUMENTO,
   INSURANCE_TYPE_NOME_POR_TIPO_DOCUMENTO,
@@ -248,7 +249,7 @@ function calcularVigencia(tipoDocumento, fimVigBruto) {
 // Insurance: mantém os três períodos mais recentes por cliente + tipo.
 // ---------------------------------------------------------------------------
 
-async function manterTresSegurosRecentes(db, clientId, tipoId) {
+async function manterTresSegurosRecentes(db, clientId, tipoId, user, registrarEventos = true) {
   await db.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clientId} FOR NO KEY UPDATE`;
   const seguros = await db.insurance.findMany({
     where: { clientId, tipoId },
@@ -263,6 +264,9 @@ async function manterTresSegurosRecentes(db, clientId, tipoId) {
   const excedentes = seguros.slice(3);
   if (excedentes.length) {
     await arquivarSegurosExcedentes(db, clientId, excedentes);
+    if (registrarEventos) {
+      for (const seguro of excedentes) await recordInsuranceEvent(db, user, "INSURANCE_ARCHIVED", seguro);
+    }
     await db.insurance.deleteMany({ where: { clientId, tipoId, id: { in: excedentes.map(seguro => seguro.id) } } });
   }
 }
@@ -290,11 +294,12 @@ async function arquivarSegurosExcedentes(db, clientId, seguros) {
   }
 }
 
-async function upsertInsurance(db, { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia }) {
+async function upsertInsurance(db, { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia }, user) {
   await db.$queryRaw`SELECT "id" FROM "Client" WHERE "id" = ${clientId} FOR NO KEY UPDATE`;
   // Reimportar o mesmo período atualiza seu vínculo, sem criar duplicata.
   const existente = await db.insurance.findFirst({
     where: { clientId, tipoId, inicioVigencia, fimVigencia },
+    include: { tipo: true, vinculo: true },
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
   });
 
@@ -302,13 +307,15 @@ async function upsertInsurance(db, { clientId, tipoId, vinculoId, inicioVigencia
     await db.insurance.update({
       where: { id: existente.id },
       data: { vinculoId, inicioVigencia, fimVigencia },
+      include: { tipo: true, vinculo: true },
     });
   } else {
     await db.insurance.create({
       data: { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia },
+      include: { tipo: true, vinculo: true },
     });
   }
-  await manterTresSegurosRecentes(db, clientId, tipoId);
+  await manterTresSegurosRecentes(db, clientId, tipoId, user, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +365,7 @@ function adicionarPlacaObservacao(tipoDocumento, placaBruta, observacaoAnterior 
 // Processamento de uma linha (um segurado), em transação
 // ---------------------------------------------------------------------------
 
-async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, processadosNaImportacao }) {
+async function processarSegurado({ user, tipoDocumento, insuranceTypeId, segurado, processadosNaImportacao }) {
   const chave = chaveIdentificacao(tipoDocumento, segurado);
   if (!chave) {
     throw new AppError(
@@ -423,7 +430,7 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
         vinculoId: vinculo.id,
         inicioVigencia,
         fimVigencia,
-      });
+      }, user);
 
       processadosNaImportacao.set(chave, clienteExistente.id);
 
@@ -456,7 +463,7 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
       vinculoId: vinculo.id,
       inicioVigencia,
       fimVigencia,
-    });
+    }, user);
 
     processadosNaImportacao.set(chave, novoCliente.id);
 
@@ -503,6 +510,7 @@ async function importSpreadsheet(user, body) {
 
     try {
       const resultado = await processarSegurado({
+        user,
         tipoDocumento,
         insuranceTypeId: insuranceType.id,
         segurado,
@@ -523,6 +531,7 @@ async function importSpreadsheet(user, body) {
     }
   }
 
+  await recordImportSummary(user, resumo.tipoDocumento);
   return resumo;
 }
 
