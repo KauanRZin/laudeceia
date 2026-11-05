@@ -6,6 +6,11 @@ export async function getClients() {
   return data;
 }
 
+export async function getClient(id: string) {
+  const { data } = await api.get<Client>(`/clients/${id}`);
+  return data;
+}
+
 export async function saveClient(client: Partial<Client>) {
   const { data } = client.id ? await api.patch<Client>(`/clients/${client.id}`, client) : await api.post<Client>("/clients", client);
   return data;

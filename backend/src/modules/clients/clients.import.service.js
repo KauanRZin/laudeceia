@@ -126,7 +126,10 @@ async function buscarClienteExistente(db, tipoDocumento, segurado) {
   if (tipoDocumento === TIPO_DOCUMENTO.VIDA) {
     const cpf = somenteDigitos(segurado.cpf);
     if (!cpf) return null;
-    return db.client.findUnique({ where: { cpf }, include: { vinculos: true } });
+    return db.client.findFirst({
+      where: { cpf: { in: [cpf, formatarCpf(cpf)] } },
+      include: { vinculos: true },
+    });
   }
 
   const nomeBruto = segurado.segurado;
@@ -222,22 +225,41 @@ function calcularVigencia(tipoDocumento, fimVigBruto) {
 }
 
 // ---------------------------------------------------------------------------
-// Insurance: um registro por cliente + tipo (upsert)
+// Insurance: mantém os três períodos mais recentes por cliente + tipo.
 // ---------------------------------------------------------------------------
 
+async function manterTresSegurosRecentes(db, clientId, tipoId) {
+  const seguros = await db.insurance.findMany({ where: { clientId, tipoId } });
+  // AUTO/RE usam o fim da vigência; VIDA usa a data de renovação (início).
+  seguros.sort((a, b) =>
+    new Date(b.fimVigencia ?? b.inicioVigencia) - new Date(a.fimVigencia ?? a.inicioVigencia)
+    || new Date(b.createdAt) - new Date(a.createdAt)
+    || a.id.localeCompare(b.id)
+  );
+  const excedentes = seguros.slice(3).map(seguro => seguro.id);
+  if (excedentes.length) {
+    await db.insurance.deleteMany({ where: { clientId, tipoId, id: { in: excedentes } } });
+  }
+}
+
 async function upsertInsurance(db, { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia }) {
-  const existente = await db.insurance.findFirst({ where: { clientId, tipoId } });
+  // Reimportar o mesmo período atualiza seu vínculo, sem criar duplicata.
+  const existente = await db.insurance.findFirst({
+    where: { clientId, tipoId, inicioVigencia, fimVigencia },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+  });
 
   if (existente) {
-    return db.insurance.update({
+    await db.insurance.update({
       where: { id: existente.id },
       data: { vinculoId, inicioVigencia, fimVigencia },
     });
+  } else {
+    await db.insurance.create({
+      data: { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia },
+    });
   }
-
-  return db.insurance.create({
-    data: { clientId, tipoId, vinculoId, inicioVigencia, fimVigencia },
-  });
+  await manterTresSegurosRecentes(db, clientId, tipoId);
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +294,16 @@ function montarObservacao(alteracoes, observacaoAnterior) {
   return observacaoAnterior ? `${observacaoAnterior} | ${texto}` : texto;
 }
 
+function adicionarPlacaObservacao(tipoDocumento, placaBruta, observacaoAnterior = "", modeloBruto) {
+  if (tipoDocumento !== TIPO_DOCUMENTO.AUTO) return observacaoAnterior;
+  const placa = String(placaBruta ?? "").trim().toUpperCase().replace(/[-\s]/g, "");
+  const modelo = String(modeloBruto ?? "").trim().replace(/\s+/g, " ");
+  if (!placa && !modelo) return observacaoAnterior;
+  const registro = ["Seguro Auto", modelo && `Modelo: ${modelo}`, placa && `Placa: ${placa}`].filter(Boolean).join(" - ");
+  if (observacaoAnterior.split(" | ").includes(registro)) return observacaoAnterior;
+  return observacaoAnterior ? `${observacaoAnterior} | ${registro}` : registro;
+}
+
 // ---------------------------------------------------------------------------
 // Processamento de uma linha (um segurado), em transação
 // ---------------------------------------------------------------------------
@@ -288,6 +320,8 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
 
   const { vinculoNome, alteracao: alteracaoVinculo } = determinarVinculo(tipoDocumento, segurado.agencia);
   const { inicioVigencia, fimVigencia } = calcularVigencia(tipoDocumento, segurado.fim_vig);
+  // Valida antes de gravar qualquer dado da linha; placa ausente é opcional.
+  adicionarPlacaObservacao(tipoDocumento, segurado.placa, "", segurado.modelo);
 
   return prisma.$transaction(async tx => {
     const vinculo = await tx.vinculo.findUnique({ where: { nome: vinculoNome } });
@@ -304,11 +338,12 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
         include: { vinculos: true },
       });
       const { conectar } = avaliarVinculoDoCliente(clienteAtual, vinculo);
+      const observacao = adicionarPlacaObservacao(tipoDocumento, segurado.placa, clienteAtual.observacao, segurado.modelo);
 
-      if (conectar) {
+      if (conectar || observacao !== clienteAtual.observacao) {
         await tx.client.update({
           where: { id: clientIdJaProcessado },
-          data: { vinculos: { connect: { id: vinculo.id } } },
+          data: { observacao, ...(conectar && { vinculos: { connect: { id: vinculo.id } } }) },
         });
       }
 
@@ -321,6 +356,8 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
 
     if (clienteExistente) {
       const dados = montarAtualizacaoCliente(segurado, clienteExistente, tipoDocumento);
+      const observacao = adicionarPlacaObservacao(tipoDocumento, segurado.placa, clienteExistente.observacao, segurado.modelo);
+      if (observacao !== clienteExistente.observacao) dados.observacao = observacao;
       const { conectar, alteracao: alteracaoVinculoCliente } = avaliarVinculoDoCliente(clienteExistente, vinculo);
 
       const alteracoes = [alteracaoVinculoCliente, alteracaoVinculo].filter(Boolean);
@@ -332,7 +369,7 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
           data: {
             ...dados,
             ...(conectar && { vinculos: { connect: { id: vinculo.id } } }),
-            ...(alteracoes.length && { observacao: montarObservacao(alteracoes, clienteExistente.observacao) }),
+            ...(alteracoes.length && { observacao: montarObservacao(alteracoes, observacao) }),
           },
         });
       }
@@ -348,7 +385,7 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
       processadosNaImportacao.set(chave, clienteExistente.id);
 
       return {
-        status: houveAlteracaoDados || conectar || alteracoes.length ? "atualizado" : "sem_alteracao",
+        status: "atualizado",
         clientId: clienteExistente.id,
         comDadosGenericos: false,
       };
@@ -361,7 +398,7 @@ async function processarSegurado({ tipoDocumento, insuranceTypeId, segurado, pro
     let novoCliente;
     try {
       novoCliente = await tx.client.create({
-        data: { ...dados, observacao: montarObservacao(alteracoes, "") || "", vinculos: { connect: { id: vinculo.id } } },
+        data: { ...dados, observacao: adicionarPlacaObservacao(tipoDocumento, segurado.placa, montarObservacao(alteracoes, "") || "", segurado.modelo), vinculos: { connect: { id: vinculo.id } } },
       });
     } catch (error) {
       if (error.code === "P2002") {
@@ -446,4 +483,4 @@ async function importSpreadsheet(user, body) {
   return resumo;
 }
 
-module.exports = { importSpreadsheet };
+module.exports = { importSpreadsheet, adicionarPlacaObservacao, manterTresSegurosRecentes };

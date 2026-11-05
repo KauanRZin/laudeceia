@@ -41,7 +41,7 @@ const insuranceParams = z.object({
 
 const createInsuranceSchema = z.object({
   params: idParams,
-  body: insuranceBody,
+  body: insuranceBody.extend({ placa: z.string().nullable().optional(), modelo: z.string().nullable().optional() }),
 });
 
 const updateInsuranceSchema = z.object({
