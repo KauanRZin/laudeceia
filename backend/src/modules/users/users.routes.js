@@ -1,6 +1,7 @@
 const express = require("express");
 const controller = require("./users.controller");
 const auth = require("../../middlewares/auth");
+const { requireRole } = require("../../middlewares/authorize");
 const validate = require("../../middlewares/validate");
 const asyncHandler = require("../../utils/asyncHandler");
 const {
@@ -24,6 +25,8 @@ router.use(auth);
  */
 router.get("/", asyncHandler(controller.list));
 router.post("/", validate(createUserSchema), asyncHandler(controller.create));
+
+router.get("/database-backup", requireRole("SUPERADMIN"), asyncHandler(controller.downloadDatabaseBackup));
 
 /**
  * @openapi
