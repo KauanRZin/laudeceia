@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Lock, Edit, CheckCircle2, Plus } from "lucide-react";
+import { Lock, Edit, CheckCircle2, Plus, Download } from "lucide-react";
 import type { Role, User } from "../types/domain";
 import * as usersApi from "../api/usersApi";
 import { normalizeApiError } from "../api/http";
@@ -44,12 +44,43 @@ export function useUsers(currentUser: User | null, notify: (msg: string) => void
 
 // --- TELAS ---
 export function UserManagement({ currentUser, users, loading, onNew, onEdit, onToggle }: any) {
+  const [exportandoBackup, setExportandoBackup] = useState(false);
+  const [erroBackup, setErroBackup] = useState("");
+
+  async function baixarBackup() {
+    setExportandoBackup(true);
+    setErroBackup("");
+    try {
+      const arquivo = await usersApi.downloadDatabaseBackup();
+      const url = URL.createObjectURL(arquivo);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `segurapro-backup-${new Date().toISOString().slice(0, 10)}.sql`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setErroBackup(error instanceof Error ? error.message : "Não foi possível baixar o backup SQL.");
+    } finally {
+      setExportandoBackup(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="page-title">Usuários do Sistema</h1>
-        <button className="btn-primary" onClick={onNew}><Plus size={16} /> Novo Usuário</button>
+        <div className="flex flex-wrap gap-2">
+          {currentUser?.role === "SuperAdmin" && (
+            <button type="button" className="btn-outline" onClick={baixarBackup} disabled={exportandoBackup}>
+              <Download size={16} /> {exportandoBackup ? "Gerando backup…" : "Exportar backup SQL"}
+            </button>
+          )}
+          <button className="btn-primary" onClick={onNew}><Plus size={16} /> Novo Usuário</button>
+        </div>
       </div>
+      {erroBackup && <p role="alert" className="text-sm text-red-600">{erroBackup}</p>}
       <section className="card table-wrap">
         {loading ? <p className="p-4 text-sm text-textSecondary">Carregando usuários...</p> : (
           <table className="data-table">
