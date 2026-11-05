@@ -1,7 +1,7 @@
 const prisma = require("../../database/client");
 const AppError = require("../../utils/AppError");
 const { serializeClient, serializeInsurance } = require("../../utils/serializers");
-const { importSpreadsheet } = require("./clients.import.service");
+const { importSpreadsheet, adicionarPlacaObservacao, manterTresSegurosRecentes } = require("./clients.import.service");
 
 const clientInclude = {
   vinculos: true,
@@ -163,17 +163,26 @@ async function validateInsuranceInput(user, client, data) {
 async function addInsurance(user, clientId, data) {
   const client = await ensureClientAccess(user, clientId);
   const tipo = await validateInsuranceInput(user, client, data);
-  const insurance = await prisma.insurance.create({
-    data: {
-      clientId,
-      tipoId: data.tipoId,
-      inicioVigencia: new Date(data.inicioVigencia),
-      fimVigencia: tipo.id === 1 ? null : data.fimVigencia ? new Date(data.fimVigencia) : null,
-      vinculoId: data.vinculoId,
-    },
-    include: { tipo: true, vinculo: true },
+  return prisma.$transaction(async tx => {
+    const atual = await tx.client.findUnique({ where: { id: clientId } });
+    const tipoDocumento = /\bauto\b/i.test(tipo.nome) ? "AUTO" : null;
+    const observacao = adicionarPlacaObservacao(tipoDocumento, data.placa, atual.observacao, data.modelo);
+    const insurance = await tx.insurance.create({
+      data: {
+        clientId,
+        tipoId: data.tipoId,
+        inicioVigencia: new Date(data.inicioVigencia),
+        fimVigencia: tipo.id === 1 ? null : data.fimVigencia ? new Date(data.fimVigencia) : null,
+        vinculoId: data.vinculoId,
+      },
+      include: { tipo: true, vinculo: true },
+    });
+    if (observacao !== atual.observacao) {
+      await tx.client.update({ where: { id: clientId }, data: { observacao } });
+    }
+    await manterTresSegurosRecentes(tx, clientId, data.tipoId);
+    return serializeInsurance(insurance);
   });
-  return serializeInsurance(insurance);
 }
 
 async function updateInsurance(user, clientId, insuranceId, data) {

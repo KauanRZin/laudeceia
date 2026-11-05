@@ -91,10 +91,16 @@ export default function App() {
         vinculoPadrao,
       });
 
-      notify(`Importação concluída! ${data.count || 0} processados.`);
-      
-      // Opcional: Atualizar a lista chamando o backend de novo (se você tiver uma função loadClients)
-      // loadClients();
+      const erros = data.erros || [];
+      notify(`Importação concluída: ${data.criados || 0} criados, ${data.atualizados || 0} atualizados, ${erros.length} erros.`);
+      /*
+      if (erros.length) {
+        window.alert(erros.map((erro: { linha: number; nome: string; erro: string }) =>
+          `Registro ${erro.linha} (${erro.nome}): ${erro.erro}`
+        ).join('\n'));
+      }
+        */
+      setClients(await clientsApi.getClients());
 
     } catch (error: any) {
       console.error("Erro na importação:", error);
