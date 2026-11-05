@@ -23,10 +23,6 @@ export function InsuranceModal({ user, client, vinculos, insuranceTypes, onClose
 
   function handleSave() {
     const placa = isAuto ? (insurance.placa || "").trim().toUpperCase().replace(/[-\s]/g, "") : "";
-    if (placa && !/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa)) {
-      setPlacaError("Placa inválida. Use ABC-1234 ou ABC1D23.");
-      return;
-    }
     if (!insurance.inicioVigencia) {
       setError("O início de vigência é obrigatório.");
       return;

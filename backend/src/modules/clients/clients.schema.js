@@ -27,6 +27,30 @@ const createClientSchema = z.object({ body: clientBody });
 const updateClientSchema = z.object({ params: idParams, body: clientBody.partial() });
 const clientIdSchema = z.object({ params: idParams });
 
+const exportFields = z.enum(["nascimento", "cpf", "telefone", "endereco", "observacao"]);
+const exportCommonQuery = z.object({
+  vinculo: z.string().trim().min(1).max(200).optional(),
+  campos: z.string().default("")
+    .transform((value) => value ? value.split(",") : [])
+    .pipe(z.array(exportFields).max(5)),
+});
+const exportClientsSchema = z.object({
+  query: z.discriminatedUnion("modo", [
+    exportCommonQuery.extend({ modo: z.literal("clientes") }),
+    exportCommonQuery.extend({
+      modo: z.literal("seguros"),
+      inicio: z.string().date("Informe uma data inicial válida"),
+      fim: z.string().date("Informe uma data final válida"),
+      criterio: z.enum(["vigencia", "vencimento"]),
+      tipoId: z.coerce.number().int().positive().optional(),
+    }),
+  ]).superRefine((query, ctx) => {
+    if (query.modo === "seguros" && query.inicio > query.fim) {
+      ctx.addIssue({ code: "custom", path: ["fim"], message: "A data final deve ser igual ou posterior à data inicial" });
+    }
+  }),
+});
+
 const insuranceBody = z.object({
   tipoId: z.number().int().positive(),
   inicioVigencia: z.string().min(1, "Início de vigência obrigatório"),
@@ -53,6 +77,7 @@ module.exports = {
   createClientSchema,
   updateClientSchema,
   clientIdSchema,
+  exportClientsSchema,
   createInsuranceSchema,
   updateInsuranceSchema,
 };
