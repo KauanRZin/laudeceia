@@ -8,9 +8,11 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
   assert.ok(database.pathname.endsWith("_test"));
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.JWT_SECRET = "insurance-workflow-test-secret";
+  process.env.JWT_EXPIRES_IN = "1h";
   process.env.NODE_ENV = "test";
 
   const prisma = require("../src/database/client");
+  const bcrypt = require("bcryptjs");
   const jwt = require("jsonwebtoken");
   const app = require("../src/app");
   const config = require("../src/config/import");
@@ -27,6 +29,15 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
       "Content-Type": "application/json",
     },
     ...(body && { body: JSON.stringify(body) }),
+  });
+  const restore = (sql, role = "SUPERADMIN", confirmation = "replace", contentType = "application/sql") => fetch(base + "/users/database-backup", {
+    method: "POST",
+    headers: {
+      ...(role && { Authorization: `Bearer ${jwt.sign({ sub: users[role].id }, process.env.JWT_SECRET)}` }),
+      "Content-Type": contentType,
+      "X-Confirm-Restore": confirmation,
+    },
+    body: sql,
   });
   const inspect = id => prisma.client.findUnique({ where: { id }, include: { vinculos: true, seguros: true } });
   const importRows = async (tipo, segurados) => {
@@ -251,15 +262,22 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
         await prisma.$executeRawUnsafe("DROP FUNCTION regression_delete_fail()");
       }
     });
+    let sql;
+    const observation = "São José\nColuna\tValor\r\n\\N\n\\.\n'); DELETE FROM public.\"Client\"; --";
+    const backupPassword = "local-fixture-password";
     await t.test("backup só para administrador gera SQL restaurável", async () => {
       for (const role of [null, "MANAGER", "EMPLOYEE"]) {
         const response = await request("/users/database-backup", role);
         assert.equal(response.status, role ? 403 : 401);
         await response.json();
       }
+      const vinculo = await prisma.vinculo.findFirstOrThrow();
+      await prisma.user.update({ where: { id: users.MANAGER.id }, data: { vinculos: { connect: { id: vinculo.id } } } });
+      await prisma.user.update({ where: { id: users.SUPERADMIN.id }, data: { passwordHash: await bcrypt.hash(backupPassword, 4) } });
+      await prisma.client.update({ where: { id: clientId }, data: { observacao: observation } });
       const response = await request("/users/database-backup");
       assert.equal(response.status, 200);
-      const sql = await response.text();
+      sql = await response.text();
       assert.match(sql, /CREATE TABLE public\."Client"/);
       const env = { ...process.env, PGHOST: database.hostname, PGPORT: database.port || "5432", PGUSER: decodeURIComponent(database.username), PGPASSWORD: decodeURIComponent(database.password) };
       const restoreName = `restore_${Date.now()}_test`;
@@ -268,6 +286,74 @@ test("fluxos de seguros em PostgreSQL isolado", { skip: !process.env.TEST_DATABA
         execFileSync("psql", ["-X", "-q", "-v", "ON_ERROR_STOP=1", "-d", restoreName], { env, input: sql });
         assert.equal(execFileSync("psql", ["-X", "-At", "-d", restoreName, "-c", 'SELECT count(*) FROM "Client"'], { env, encoding: "utf8" }).trim(), "1");
       } finally { execFileSync("dropdb", [restoreName], { env }); }
+    });
+    await t.test("importar backup exige SuperAdmin, confirmação e arquivo válido dentro do limite", async () => {
+      for (const role of [null, "MANAGER", "EMPLOYEE"]) {
+        const response = await restore(sql, role);
+        assert.equal(response.status, role ? 403 : 401);
+        await response.json();
+      }
+      const unconfirmed = await restore(sql, "SUPERADMIN", "");
+      assert.equal(unconfirmed.status, 400);
+      assert.equal((await unconfirmed.json()).error.code, "RESTORE_CONFIRMATION_REQUIRED");
+      const wrongType = await restore(sql, "SUPERADMIN", "replace", "text/plain");
+      assert.equal(wrongType.status, 415);
+      await wrongType.json();
+      const invalid = await restore('DROP TABLE public."Client";');
+      assert.equal(invalid.status, 422);
+      assert.equal((await invalid.json()).error.code, "INVALID_SQL_BACKUP");
+      const oversized = await restore(Buffer.alloc(20 * 1024 * 1024 + 1));
+      assert.equal(oversized.status, 413);
+      await oversized.json();
+      assert.equal((await inspect(clientId)).observacao, observation);
+    });
+    await t.test("rejeita uma restauração concorrente", async () => {
+      await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT pg_try_advisory_xact_lock(18427, 40103)`;
+        const response = await restore(sql);
+        assert.equal(response.status, 409);
+        assert.equal((await response.json()).error.code, "RESTORE_IN_PROGRESS");
+      });
+    });
+    await t.test("restauração desfaz todas as mudanças se houver FK inválida ou faltar um SuperAdmin ativo", async () => {
+      const clientBefore = await inspect(clientId);
+      const logsBefore = await prisma.auditLog.count();
+      const brokenFk = sql.replace(/(COPY public\."Insurance" [^\n]+\n[^\t\n]+\t)[^\t\n]+/, "$1cliente-ausente");
+      const noAdmin = sql.replace("\tSUPERADMIN\tATIVO\t", "\tSUPERADMIN\tINATIVO\t");
+      for (const backup of [brokenFk, noAdmin]) {
+        assert.notEqual(backup, sql);
+        const response = await restore(backup);
+        assert.equal(response.status, 422);
+        assert.equal((await response.json()).error.code, "INVALID_SQL_BACKUP");
+        assert.deepEqual(await inspect(clientId), clientBefore);
+        assert.equal(await prisma.auditLog.count(), logsBefore);
+        assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: users.SUPERADMIN.id } })).status, "ATIVO");
+      }
+    });
+    await t.test("restaura os registros e vínculos do backup e mantém as migrações do destino", async () => {
+      const clientBefore = await inspect(clientId);
+      const logsBefore = await prisma.auditLog.findMany({ orderBy: { id: "asc" } });
+      const managerBefore = await prisma.user.findUnique({ where: { id: users.MANAGER.id }, include: { vinculos: true } });
+      const migrationsBefore = await prisma.$queryRaw`SELECT id FROM public._prisma_migrations ORDER BY id`;
+      const lastVinculo = await prisma.vinculo.aggregate({ _max: { id: true } });
+      await prisma.client.update({ where: { id: clientId }, data: { observacao: "após o backup" } });
+      await prisma.user.delete({ where: { id: users.MANAGER.id } });
+      await prisma.user.update({ where: { id: users.SUPERADMIN.id }, data: { passwordHash: await bcrypt.hash("new-fixture-password", 4) } });
+      const extraVinculo = await prisma.vinculo.create({ data: { nome: "após o backup" } });
+      await prisma.auditLog.deleteMany();
+
+      const response = await restore(`${sql}\nDELETE FROM public."Client";\n\\! false\n`);
+      assert.equal(response.status, 200, await response.clone().text());
+      assert.deepEqual(await response.json(), { ok: true });
+      assert.deepEqual(await inspect(clientId), clientBefore);
+      assert.deepEqual(await prisma.auditLog.findMany({ orderBy: { id: "asc" } }), logsBefore);
+      assert.deepEqual(await prisma.user.findUnique({ where: { id: users.MANAGER.id }, include: { vinculos: true } }), managerBefore);
+      assert.deepEqual(await prisma.$queryRaw`SELECT id FROM public._prisma_migrations ORDER BY id`, migrationsBefore);
+      assert.equal(await prisma.vinculo.findUnique({ where: { id: extraVinculo.id } }), null);
+      assert.equal((await prisma.vinculo.create({ data: { nome: "após a restauração" } })).id, lastVinculo._max.id + 1);
+      const login = await request("/auth/login", null, "POST", { email: users.SUPERADMIN.email, password: backupPassword });
+      assert.equal(login.status, 200, await login.clone().text());
+      assert.equal((await login.json()).user.id, users.SUPERADMIN.id);
     });
     await t.test("logs persistem depois da exclusão do cliente", async () => {
       const before = await prisma.auditLog.count({ where: { clientId } });
