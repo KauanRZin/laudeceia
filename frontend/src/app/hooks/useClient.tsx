@@ -25,9 +25,8 @@ export function useClients(currentUser: User | null, notify: (msg: string) => vo
 
   async function saveClient(client: Client) {
     try {
-      const saved = await clientsApi.saveClient(client);
+      let saved = await clientsApi.saveClient(client);
       const novosSeguros = client.seguros.filter((seguro) => String(seguro.id).startsWith("s"));
-      const segurosCriados = [];
       
       for (const seguro of novosSeguros) {
         const payload = {
@@ -35,13 +34,14 @@ export function useClients(currentUser: User | null, notify: (msg: string) => vo
           vinculoId: Number(seguro.vinculoId),
           inicioVigencia: seguro.inicioVigencia,
           fimVigencia: seguro.fimVigencia || null,
+          placa: seguro.placa,
+          modelo: seguro.modelo,
         };
-        const criado = await clientsApi.addInsurance(saved.id, payload);
-        segurosCriados.push(criado);
+        await clientsApi.addInsurance(saved.id, payload);
       }
       
-      const segurosAntigos = client.seguros.filter((seguro) => !String(seguro.id).startsWith("s"));
-      saved.seguros = [...segurosAntigos, ...segurosCriados];
+      // Recarrega a observação com as placas e somente os seguros mantidos no servidor.
+      if (novosSeguros.length) saved = await clientsApi.getClient(saved.id);
 
       setClients((prev) => (client.id ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
       notify("Cliente salvo com sucesso.");

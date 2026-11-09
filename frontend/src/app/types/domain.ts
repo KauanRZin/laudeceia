@@ -4,6 +4,8 @@ export type Screen =
   | "login"
   | "dashboard"
   | "clients"
+  | "clientPeriodSearch"
+  | "auditLogs"
   | "clientForm"
   | "clientProfile"
   | "users"
@@ -11,6 +13,9 @@ export type Screen =
   | "profile";
 
 export interface Insurance {
+  // Usada no cadastro de Auto; persistida na observação do cliente.
+  placa?: string;
+  modelo?: string;
   id: string;
   tipoId: number;
   tipoNome: string;

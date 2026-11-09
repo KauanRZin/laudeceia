@@ -19,23 +19,24 @@ const INSURANCE_TYPE_NOME_POR_TIPO_DOCUMENTO = {
 };
 
 // Vínculo usado quando o documento é de VIDA (não tem número de agência).
-const VINCULO_SEM_AGENCIA = "Agência";
+const VINCULO_SEM_AGENCIA = "LAUDYS Corretora";
 
 // Vínculo "base", sem agência específica — usado como fallback quando o
 // número de agência do documento não corresponde a nenhuma configurada abaixo.
-const VINCULO_PADRAO = "LAUDYS Corretora";
+const VINCULO_PADRAO = "Agência";
 
 // Mapa "número da agência no documento" -> "nome da agência".
 // Edite/adicione entradas aqui conforme novas agências surgirem.
 const AGENCIAS = {
   "1784": "Limoeiro",
   "835": "Surubim",
+  "1344": "Surubim",
 };
 
 // Monta o nome do Vinculo (tabela Vinculo, campo `nome`) a partir do nome da agência.
 // Precisa bater com os valores cadastrados em Vinculo (ex: "LAUDYS Corretora Agencia Limoeiro").
 function vinculoNomePorAgencia(nomeAgencia) {
-  return `${VINCULO_PADRAO} Agencia ${nomeAgencia}`;
+  return `LAUDYS Corretora Agencia ${nomeAgencia}`;
 }
 
 // Dados genéricos usados quando o documento não traz informação suficiente

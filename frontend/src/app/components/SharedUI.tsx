@@ -56,6 +56,21 @@ export function StatusBadge({ status }: { status: "Ativo" | "Inativo" | "Expiran
   return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles}`}>{status}</span>;
 }
 
+export function Pagination({ page, total, pageSize, disabled, onChange }: {
+  page: number; total: number; pageSize: number; disabled: boolean; onChange: (page: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <p className="text-textSecondary">{total} registros · Página {page} de {pages}</p>
+      <div className="flex gap-2">
+        <button type="button" className="btn-outline" disabled={disabled || page <= 1} onClick={() => onChange(page - 1)}>Anterior</button>
+        <button type="button" className="btn-outline" disabled={disabled || page >= pages} onClick={() => onChange(page + 1)}>Próxima</button>
+      </div>
+    </div>
+  );
+}
+
 export function IconButton({ children, label, onClick, danger, disabled }: { children: React.ReactNode; label: string; onClick?: () => void; danger?: boolean; disabled?: boolean }) {
   return <button type="button" className={`icon-button ${danger ? "text-danger" : ""}`} title={label} disabled={disabled} onClick={onClick}>{children}</button>;
 }

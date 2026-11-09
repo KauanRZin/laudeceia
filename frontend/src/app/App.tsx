@@ -15,6 +15,8 @@ import { Navbar } from "./components/Navbar";
 import { LoginScreen } from "./screens/LoginScreen";
 import { Dashboard } from "./screens/Dashboard";
 import { ClientList } from "./screens/ClientList";
+import { ClientPeriodSearch } from "./screens/ClientPeriodSearch";
+import { AuditLogScreen } from "./screens/AuditLogScreen";
 import { ClientForm } from "./screens/ClientForm";
 import { ClientProfile } from "./screens/ClientProfile";
 import { UserManagement, UserForm } from "./screens/UserManagement";
@@ -91,10 +93,16 @@ export default function App() {
         vinculoPadrao,
       });
 
-      notify(`Importação concluída! ${data.count || 0} processados.`);
-      
-      // Opcional: Atualizar a lista chamando o backend de novo (se você tiver uma função loadClients)
-      // loadClients();
+      const erros = data.erros || [];
+      notify(`Importação concluída: ${data.criados || 0} criados, ${data.atualizados || 0} atualizados, ${erros.length} erros.`);
+      /*
+      if (erros.length) {
+        window.alert(erros.map((erro: { linha: number; nome: string; erro: string }) =>
+          `Registro ${erro.linha} (${erro.nome}): ${erro.erro}`
+        ).join('\n'));
+      }
+        */
+      setClients(await clientsApi.getClients());
 
     } catch (error: any) {
       console.error("Erro na importação:", error);
@@ -128,7 +136,7 @@ export default function App() {
         )}
         
         {screen === "clients" && (
-          <ClientList user={currentUser} clients={visibleClients} vinculos={vinculoNomes} loading={clientsLoading} 
+          <ClientList user={currentUser} clients={visibleClients} vinculos={vinculoNomes} insuranceTypes={insuranceTypes} loading={clientsLoading}
             onNew={() => { setEditingClient(makeBlankClient(currentUser.vinculos[0] || vinculoNomes[0])); setScreen("clientForm"); }}
             onEdit={(client: Client) => { setEditingClient(structuredClone(client)); setScreen("clientForm"); }}
             onView={handleViewClient}
@@ -136,9 +144,21 @@ export default function App() {
             onImport={handleImport}
           />
         )}
+
+        {screen === "clientPeriodSearch" && (
+          <ClientPeriodSearch user={currentUser} vinculos={vinculoNomes} insuranceTypes={insuranceTypes}
+            onView={async id => handleViewClient(await clientsApi.getClient(id))}
+          />
+        )}
+
+        {screen === "auditLogs" && currentUser.role === "SuperAdmin" && <AuditLogScreen />}
         
         {screen === "clientForm" && editingClient && (
           <ClientForm user={currentUser} client={editingClient} vinculos={vinculoNomes} setClient={setEditingClient} onCancel={() => setScreen("clients")} onAddInsurance={() => setInsuranceModal(true)}
+            onInsuranceRemoved={(client: Client) => {
+              setClients(prev => prev.map(item => item.id === client.id ? client : item));
+              setSelectedClient(prev => prev?.id === client.id ? client : prev);
+            }}
             onSave={async (client: Client) => { const saved = await saveClient(client); setSelectedClient(saved); setScreen("clientProfile"); }}
           />
         )}
@@ -153,6 +173,12 @@ export default function App() {
             users={users} 
             loading={usersLoading} 
             onToggle={toggleUserStatus} 
+            onRestored={() => {
+              setClients([]);
+              setScreen("login");
+              logout();
+              notify("Backup restaurado. Entre novamente com as credenciais do backup.");
+            }}
             onNew={() => { setEditingUser(makeBlankUser(vinculoNomes[0])); setScreen("userForm"); }} 
             onEdit={(u: User) => { setEditingUser(structuredClone(u)); setScreen("userForm"); }} 
           />

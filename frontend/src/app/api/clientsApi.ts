@@ -6,6 +6,36 @@ export async function getClients() {
   return data;
 }
 
+export async function getClient(id: string) {
+  const { data } = await api.get<Client>(`/clients/${id}`);
+  return data;
+}
+
+export type ClientExportField = "nascimento" | "cpf" | "telefone" | "endereco" | "observacao";
+
+export type ClientExportFilters = {
+  vinculo?: string;
+  campos: ClientExportField[];
+} & (
+  { modo: "clientes" }
+  | { modo: "seguros"; inicio: string; fim: string; criterio: "vigencia" | "vencimento"; tipoId?: number }
+);
+
+export interface ClientExportRow {
+  cliente: Pick<Client, "nome"> & Partial<Pick<Client, ClientExportField>>;
+  seguro?: Insurance;
+}
+
+export async function getClientsForExport(filters: ClientExportFilters) {
+  const params = filters.modo === "clientes"
+    ? { modo: filters.modo, vinculo: filters.vinculo, campos: filters.campos.join(",") }
+    : { ...filters, campos: filters.campos.join(",") };
+  const { data } = await api.get<ClientExportRow[]>("/clients/export", {
+    params,
+  });
+  return data;
+}
+
 export async function saveClient(client: Partial<Client>) {
   const { data } = client.id ? await api.patch<Client>(`/clients/${client.id}`, client) : await api.post<Client>("/clients", client);
   return data;
@@ -26,7 +56,7 @@ export async function updateInsurance(clientId: string, insuranceId: string, dat
   return res;
 }
 export async function removeInsurance(clientId: string, insuranceId: string) {
-  const { data } = await api.delete(`/clients/${clientId}/insurances/${insuranceId}`);
+  const { data } = await api.delete<{ success: boolean; client: Client }>(`/clients/${clientId}/insurances/${insuranceId}`);
   return data;
 }
 export async function importClientsSpreadsheet(payload: any) {

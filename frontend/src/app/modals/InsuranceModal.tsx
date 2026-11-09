@@ -14,18 +14,21 @@ export function InsuranceModal({ user, client, vinculos, insuranceTypes, onClose
   const defaultVinculo = vinculos.find((item) => item.nome === defaultVinculoNome);
   const [insurance, setInsurance] = useState<Insurance>(makeBlankInsurance(insuranceTypes[0], defaultVinculo));
   const [error, setError] = useState("");
+  const [placaError, setPlacaError] = useState("");
 
   const selectedType = insuranceTypes.find((type) => type.id === insurance.tipoId);
   const isLife = selectedType?.nome === "Seguro de Vida";
+  const isAuto = /\bauto\b/i.test(selectedType?.nome ?? "");
   const vinculoOptions = (user.role === "Manager" || user.role === "SuperAdmin") ? vinculos.map((item) => item.nome) : user.vinculos;
 
   function handleSave() {
+    const placa = isAuto ? (insurance.placa || "").trim().toUpperCase().replace(/[-\s]/g, "") : "";
     if (!insurance.inicioVigencia) {
       setError("O início de vigência é obrigatório.");
       return;
     }
     setError("");
-    onSave({ ...insurance, fimVigencia: isLife ? null : insurance.fimVigencia });
+    onSave({ ...insurance, placa: placa || undefined, modelo: isAuto ? insurance.modelo?.trim() : undefined, fimVigencia: isLife ? null : insurance.fimVigencia });
   }
 
   return (
@@ -38,6 +41,8 @@ export function InsuranceModal({ user, client, vinculos, insuranceTypes, onClose
         <div className="space-y-4">
           <Select label="Tipo de Seguro" value={String(insurance.tipoId)} onChange={(val) => { const type = insuranceTypes.find((item) => item.id === Number(val)); setInsurance((curr) => ({ ...curr, tipoId: Number(val), tipoNome: type?.nome ?? "", fimVigencia: type?.nome === "Seguro de Vida" ? null : curr.fimVigencia })); }} options={insuranceTypes.map((type) => ({ label: `${type.id} - ${type.nome}`, value: String(type.id) }))} />
           <Field label="Início de Vigência" type="date" value={insurance.inicioVigencia} onChange={(val) => { setInsurance({ ...insurance, inicioVigencia: val }); setError(""); }} error={error} />
+          {isAuto && <Field label="Placa do veículo (opcional)" value={insurance.placa || ""} placeholder="ABC-1234 ou ABC1D23" onChange={(val) => { setInsurance({ ...insurance, placa: val }); setPlacaError(""); }} error={placaError} />}
+          {isAuto && <Field label="Modelo do veículo (opcional)" value={insurance.modelo || ""} onChange={(val) => setInsurance({ ...insurance, modelo: val })} />}
           {isLife ? (
             <p className="rounded-lg bg-blue-50 p-3 text-sm text-primary">Seguro de Vida não possui fim de vigência.</p>
           ) : (

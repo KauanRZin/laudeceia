@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { CalendarDays, Users, CheckCircle2, Eye, ChevronLeft, ChevronRight } from "lucide-react";
-import type { Client, User, RenewalRow } from "../types/domain";
+import { CalendarDays, Users, CheckCircle2, Eye, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
+import type { Client, RenewalRow } from "../types/domain";
 import { formatDate } from "../utils/format";
 import { MetricCard, Banner, StatusBadge, IconButton } from "../components/SharedUI";
 
@@ -27,6 +27,31 @@ function computeRenewals(clients: Client[], rangeStart: string, rangeEnd: string
 
 const ITEMS_PER_PAGE = 8;
 
+type SortColumn = "cliente" | "fim" | "dias";
+type SortOrder = { column: SortColumn; direction: "asc" | "desc" };
+type SortableRenewal = Pick<RenewalRow, SortColumn>;
+
+function compareRenewals(a: SortableRenewal, b: SortableRenewal, order: SortOrder | null) {
+  if (!order) {
+    if (a.dias == null) return b.dias == null ? 0 : 1;
+    if (b.dias == null) return -1;
+    const aVencido = a.dias < 0;
+    const bVencido = b.dias < 0;
+    if (aVencido !== bVencido) return aVencido ? 1 : -1;
+    return aVencido ? b.dias - a.dias : a.dias - b.dias;
+  }
+
+  const { column, direction } = order;
+  const first = a[column];
+  const second = b[column];
+  if (first == null) return second == null ? 0 : 1;
+  if (second == null) return -1;
+  const comparison = typeof first === "number" && typeof second === "number"
+    ? first - second
+    : String(first).localeCompare(String(second), "pt-BR");
+  return direction === "asc" ? comparison : -comparison;
+}
+
 function RenewalTable({
   title,
   rows,
@@ -41,13 +66,44 @@ function RenewalTable({
   onViewClient?: (clientId: string) => void;
 }) {
   const [page, setPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState<SortOrder | null>(null);
 
   // Sempre que a lista de linhas muda (ex: trocou o período do filtro),
   // volta pra primeira página em vez de deixar o usuário numa página vazia.
   useEffect(() => setPage(1), [rows]);
 
+  const sortedRows = useMemo(
+    () => [...rows].sort((a, b) => compareRenewals(a, b, sortOrder)),
+    [rows, sortOrder]
+  );
   const totalPages = Math.max(1, Math.ceil(rows.length / ITEMS_PER_PAGE));
-  const pageRows = rows.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+  const pageRows = sortedRows.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
+  function renderSortHeader(label: string, column: SortColumn) {
+    const direction = sortOrder?.column === column ? sortOrder.direction : undefined;
+    const defaultOrder = sortOrder === null && column === "dias";
+
+    return (
+      <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : defaultOrder ? "other" : undefined}>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 font-semibold"
+          title={defaultOrder ? "Vencimentos mais próximos primeiro" : undefined}
+          onClick={() => {
+            setSortOrder((current) => ({
+              column,
+              direction: current?.column === column && current.direction === "desc" ? "asc" : "desc",
+            }));
+            setPage(1);
+          }}
+        >
+          {label}
+          {(direction === "asc" || defaultOrder) && <ChevronUp size={14} aria-hidden="true" />}
+          {direction === "desc" && <ChevronDown size={14} aria-hidden="true" />}
+        </button>
+      </th>
+    );
+  }
 
   return (
     <div>
@@ -59,7 +115,15 @@ function RenewalTable({
           <div className="table-wrap">
             <table className="data-table">
               <thead>
-                <tr>{mode === "active" ? ["Cliente", "Tipo de Seguro", "Vínculo", "Início", "Fim", "Status", "Ações"].map((h) => <th key={h}>{h}</th>) : ["Cliente", "Tipo de Seguro", "Vínculo", "Fim", "Dias restantes", "Ações"].map((h) => <th key={h}>{h}</th>)}</tr>
+                <tr>
+                  {renderSortHeader("Cliente", "cliente")}
+                  <th>Tipo de Seguro</th>
+                  <th>Vínculo</th>
+                  {mode === "active" && <th>Início</th>}
+                  {renderSortHeader("Fim", "fim")}
+                  {mode === "active" ? <th>Status</th> : renderSortHeader("Dias restantes", "dias")}
+                  <th>Ações</th>
+                </tr>
               </thead>
               <tbody>
                 {pageRows.map((row) => (

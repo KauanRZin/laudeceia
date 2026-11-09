@@ -1,12 +1,15 @@
 const express = require("express");
 const controller = require("./clients.controller");
 const auth = require("../../middlewares/auth");
+const { managerOnly } = require("../../middlewares/authorize");
 const validate = require("../../middlewares/validate");
 const asyncHandler = require("../../utils/asyncHandler");
 const {
   createClientSchema,
   updateClientSchema,
   clientIdSchema,
+  clientActivitySchema,
+  exportClientsSchema,
   createInsuranceSchema,
   updateInsuranceSchema,
 } = require("./clients.schema");
@@ -30,6 +33,8 @@ router.use(auth);
  */
 router.get("/", asyncHandler(controller.list));
 router.post("/", validate(createClientSchema), asyncHandler(controller.create));
+router.get("/export", managerOnly, validate(exportClientsSchema), asyncHandler(controller.exportClients));
+router.get("/activity", validate(clientActivitySchema), asyncHandler(controller.findByInsuranceActivity));
 
 /**
  * @openapi
