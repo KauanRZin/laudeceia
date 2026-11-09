@@ -27,6 +27,9 @@ router.get("/", asyncHandler(controller.list));
 router.post("/", validate(createUserSchema), asyncHandler(controller.create));
 
 router.get("/database-backup", requireRole("SUPERADMIN"), asyncHandler(controller.downloadDatabaseBackup));
+router.post("/database-backup", requireRole("SUPERADMIN"),
+  express.raw({ type: "application/sql", limit: "20mb", inflate: false }),
+  asyncHandler(controller.uploadDatabaseBackup));
 
 /**
  * @openapi

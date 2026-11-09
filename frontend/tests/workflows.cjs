@@ -16,6 +16,21 @@ function load(relativePath, dependencies, extra = "") {
   return exports;
 }
 
+test("importação de backup envia o arquivo SQL original e a confirmação de substituição", async () => {
+  const calls = [];
+  const { restoreDatabaseBackup } = load("api/usersApi.ts", {
+    "./http": { api: { post: async (...args) => calls.push(args) } },
+  });
+  const file = new Blob(["-- PostgreSQL database dump"], { type: "application/sql" });
+  await restoreDatabaseBackup(file);
+  assert.equal(calls.length, 1);
+  const [route, body, options] = calls[0];
+  assert.equal(route, "/users/database-backup");
+  assert.equal(body, file);
+  assert.equal(options.headers["Content-Type"], "application/sql");
+  assert.equal(options.headers["X-Confirm-Restore"], "replace");
+});
+
 test("extração lê os dados deslocados em AH e AQ", () => {
   const { processarPlanilha } = load("components/importSistem.tsx", { xlsx: XLSX }, "\nexport { processarPlanilha };");
   const header = ["Segurado", "Apólice", "Fim da vigência", "Agência"];

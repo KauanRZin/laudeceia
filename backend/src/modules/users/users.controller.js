@@ -6,6 +6,7 @@ const { promisify } = require("node:util");
 const env = require("../../config/env");
 const AppError = require("../../utils/AppError");
 const service = require("./users.service");
+const { restoreDatabase } = require("./database-restore");
 
 const runPgDump = promisify(execFile);
 let backupEmAndamento = false;
@@ -76,6 +77,17 @@ async function list(req, res) {
   res.json(await service.list(req.user));
 }
 
+async function uploadDatabaseBackup(req, res) {
+  if (req.get("X-Confirm-Restore") !== "replace") {
+    throw new AppError("Confirme a substituição dos dados atuais.", 400, "RESTORE_CONFIRMATION_REQUIRED");
+  }
+  if (!req.is("application/sql")) {
+    throw new AppError("Envie um arquivo SQL de backup.", 415, "SQL_BACKUP_REQUIRED");
+  }
+  await restoreDatabase(req.body, req.user.id);
+  res.set("Cache-Control", "no-store").json({ ok: true });
+}
+
 async function getById(req, res) {
   res.json(await service.getById(req.user, req.params.id));
 }
@@ -96,4 +108,4 @@ async function updateMe(req, res) {
   res.json(await service.updateMe(req.user, req.validated.body));
 }
 
-module.exports = { list, getById, create, update, updateStatus, updateMe, downloadDatabaseBackup };
+module.exports = { list, getById, create, update, updateStatus, updateMe, downloadDatabaseBackup, uploadDatabaseBackup };

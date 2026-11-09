@@ -173,6 +173,12 @@ export default function App() {
             users={users} 
             loading={usersLoading} 
             onToggle={toggleUserStatus} 
+            onRestored={() => {
+              setClients([]);
+              setScreen("login");
+              logout();
+              notify("Backup restaurado. Entre novamente com as credenciais do backup.");
+            }}
             onNew={() => { setEditingUser(makeBlankUser(vinculoNomes[0])); setScreen("userForm"); }} 
             onEdit={(u: User) => { setEditingUser(structuredClone(u)); setScreen("userForm"); }} 
           />

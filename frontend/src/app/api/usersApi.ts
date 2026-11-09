@@ -21,6 +21,13 @@ export async function downloadDatabaseBackup() {
   }
 }
 
+export async function restoreDatabaseBackup(file: File) {
+  await api.post("/users/database-backup", file, {
+    headers: { "Content-Type": "application/sql", "X-Confirm-Restore": "replace" },
+    timeout: 150_000,
+  });
+}
+
 export async function saveUser(user: Partial<User> & { password?: string }) {
   const { data } = user.id ? await api.patch<User>(`/users/${user.id}`, user) : await api.post<User>("/users", user);
   return data;

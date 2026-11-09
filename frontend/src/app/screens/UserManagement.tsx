@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Lock, Edit, CheckCircle2, Plus, Download } from "lucide-react";
+import { Lock, Edit, CheckCircle2, Plus, Download, Upload } from "lucide-react";
 import type { Role, User } from "../types/domain";
 import * as usersApi from "../api/usersApi";
 import { normalizeApiError } from "../api/http";
 import { IconButton, StatusBadge, Breadcrumb, Field, Select } from "../components/SharedUI";
+import { RestoreBackupModal } from "../modals/RestoreBackupModal";
 
 // --- HOOK ISOLADO DE USUÁRIOS ---
 export function useUsers(currentUser: User | null, notify: (msg: string) => void) {
@@ -43,9 +44,18 @@ export function useUsers(currentUser: User | null, notify: (msg: string) => void
 }
 
 // --- TELAS ---
-export function UserManagement({ currentUser, users, loading, onNew, onEdit, onToggle }: any) {
+export function UserManagement({ currentUser, users, loading, onNew, onEdit, onToggle, onRestored }: {
+  currentUser: User;
+  users: User[];
+  loading: boolean;
+  onNew: () => void;
+  onEdit: (user: User) => void;
+  onToggle: (user: User) => void;
+  onRestored: () => void;
+}) {
   const [exportandoBackup, setExportandoBackup] = useState(false);
   const [erroBackup, setErroBackup] = useState("");
+  const [restaurarBackup, setRestaurarBackup] = useState(false);
 
   async function baixarBackup() {
     setExportandoBackup(true);
@@ -73,14 +83,22 @@ export function UserManagement({ currentUser, users, loading, onNew, onEdit, onT
         <h1 className="page-title">Usuários do Sistema</h1>
         <div className="flex flex-wrap gap-2">
           {currentUser?.role === "SuperAdmin" && (
-            <button type="button" className="btn-outline" onClick={baixarBackup} disabled={exportandoBackup}>
-              <Download size={16} /> {exportandoBackup ? "Gerando backup…" : "Exportar backup SQL"}
-            </button>
+            <>
+              <button type="button" className="btn-outline" onClick={baixarBackup} disabled={exportandoBackup}>
+                <Download size={16} /> {exportandoBackup ? "Gerando backup…" : "Exportar backup SQL"}
+              </button>
+              <button type="button" className="btn-outline" onClick={() => setRestaurarBackup(true)} disabled={exportandoBackup}>
+                <Upload size={16} /> Importar backup SQL
+              </button>
+            </>
           )}
           <button className="btn-primary" onClick={onNew}><Plus size={16} /> Novo Usuário</button>
         </div>
       </div>
       {erroBackup && <p role="alert" className="text-sm text-red-600">{erroBackup}</p>}
+      {currentUser?.role === "SuperAdmin" && restaurarBackup && (
+        <RestoreBackupModal onClose={() => setRestaurarBackup(false)} onRestored={onRestored} />
+      )}
       <section className="card table-wrap">
         {loading ? <p className="p-4 text-sm text-textSecondary">Carregando usuários...</p> : (
           <table className="data-table">
